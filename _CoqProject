@@ -81,3 +81,5 @@ heap_lang/notation.v
 heap_lang/tests.v
 heap_lang/substitution.v
 barrier/barrier.v
+
+logrel/types.v
