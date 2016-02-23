@@ -346,13 +346,6 @@ Proof.
   rewrite -(wp_lift_pure_det_step (Case (InjR _) _ _) (e2.[of_val v0/]) None) //=; auto.
   - rewrite right_id; auto using uPred.later_mono, wp_value'.
 Qed.
-
-(*
-Lemma wp_Pair E e1 e2 Q1 Q2 :
-  (|| e1 @ E {{ Q1 }} ∧ || e2 @ E {{ Q2 }})  ⊑
-  || Pair e1 e2 @ E {{ λ w : val, ∃ w1 w2 : val, w = PairV w1 w2 ∧ Q1 w1 ∧ Q2 w2 }}.
-Proof.
-  *)
     
 End lang_rules.
 
@@ -393,7 +386,7 @@ Fixpoint interp (τ : type) (w : val) : iProp lang Σ :=
   | TUnit => w = UnitV
   | TProd τ1 τ2 => ∃ w1 w2, w = PairV w1 w2 ∧ ▷ interp τ1 w1 ∧ ▷ interp τ2 w2
   | TSum τ1 τ2 =>
-     (∃ w1, w = InjLV w1 ∧ ▷ interp τ1 w1) ∨ (∃ w2, w = InjLV w2 ∧ ▷ interp τ1 w2)
+     (∃ w1, w = InjLV w1 ∧ ▷ interp τ1 w1) ∨ (∃ w2, w = InjRV w2 ∧ ▷ interp τ2 w2)
   | TArrow τ1 τ2 =>
      □ ∀ v, ▷ interp τ1 v → wp ⊤ (App (of_val w) (of_val v)) (interp τ2)
   end%I.
@@ -412,6 +405,17 @@ Qed.
 
 Definition env_subst (vs : list val) (x : var) : expr :=
   from_option (Var x) (of_val <$> vs !! x).
+
+Lemma typed_subst_head_simpl Δ τ e w ws :
+  typed Δ e τ -> length Δ = S (length ws) →
+  e.[# w .: env_subst ws] = e.[env_subst (w :: ws)]
+.
+Proof.
+  intros H1 H2.
+  rewrite /env_subst. eapply typed_subst_invariant; eauto=> /= -[|x] ? //=.
+  destruct (lookup_lt_is_Some_2 ws x) as [v' Hv]; first omega; simpl.
+  by rewrite Hv.
+Qed.
 
 Lemma typed_interp Γ vs e τ :
   typed Γ e τ → length Γ = length vs →
@@ -437,22 +441,69 @@ Proof.
     rewrite -wp_value/= ?to_of_val // -!exist_intro.
     repeat apply and_intro; eauto; rewrite -later_intro;
     repeat rewrite and_elim_r + rewrite and_elim_l; eauto; fail.
-  * (* fst *) admit.
-  * (* snd *) admit.
-  * (* injl *) admit.
-  * (* injr *) admit.
-  * (* case *) admit.
+  * (* fst *)
+    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [FstCtx]) /=.
+    rewrite -wp_mono; eauto; intros v; cbn.
+    rewrite exist_elim; eauto; intros v1. rewrite exist_elim; eauto; intros v2.
+    apply const_elim_l.
+    intros H; rewrite H.
+    rewrite -wp_fst; eauto using to_of_val, and_elim_l.    
+  * (* snd *)
+    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [SndCtx]) /=.
+    rewrite -wp_mono; eauto; intros v; cbn.
+    rewrite exist_elim; eauto; intros v1. rewrite exist_elim; eauto; intros v2.
+    apply const_elim_l; intros H; rewrite H.
+    rewrite -wp_snd; eauto using to_of_val, and_elim_r.
+  * (* injl *)
+    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [InjLCtx]) /=.
+    rewrite -wp_mono; eauto; intros v; cbn.
+    rewrite -wp_value/= ?to_of_val // -or_intro_l -!exist_intro.
+    apply and_intro; eauto using later_intro.
+  * (* injr *)
+    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [InjRCtx]) /=.
+    rewrite -wp_mono; eauto; intros v; cbn.
+    rewrite -wp_value/= ?to_of_val // -or_intro_r -!exist_intro.
+    apply and_intro; eauto using later_intro.
+  * (* case *)
+    rewrite -(@wp_bind _ _ (e0.[env_subst vs]) [CaseCtx _ _]) /=.
+    rewrite -wp_impl_l -and_intro; eauto.
+    apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
+    (** Lemma to be used later *)
+    rewrite (later_intro (Π∧ zip_with interp Γ vs)).
+    rewrite or_elim; [apply impl_elim_l| |];
+    rewrite exist_elim; eauto; [intros v1| intros v2];
+    apply const_elim_l; intros H; rewrite H.
+    - rewrite -wp_case_inl; eauto using to_of_val.
+      rewrite -impl_intro_r; eauto.
+      rewrite -later_and later_mono; eauto.
+      specialize (IHHtyped2 (v1::vs)).
+      erewrite <- typed_subst_head_simpl in IHHtyped2 by (cbn; eauto).
+      asimpl. apply IHHtyped2; cbn; auto.
+    - rewrite -wp_case_inr; eauto using to_of_val.
+      rewrite -impl_intro_r; eauto.
+      rewrite -later_and later_mono; eauto.
+      specialize (IHHtyped3 (v2::vs)).
+      erewrite <- typed_subst_head_simpl in IHHtyped3 by (cbn; eauto).
+      asimpl. apply IHHtyped3; cbn; auto.
   * (* lam *) rewrite -wp_value//=.
     apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
     rewrite -wp_lam ?to_of_val //=.
-    assert (e.[# v .: env_subst vs] = e.[env_subst (v :: vs)]) as Hsubst.
-    { rewrite /env_subst. eapply typed_subst_invariant; eauto=> /= -[|x] ? //=.
-      destruct (lookup_lt_is_Some_2 vs x) as [v' Hv]; first omega; simpl.
-      by rewrite Hv. }
-    asimpl; rewrite Hsubst.
+    asimpl. erewrite typed_subst_head_simpl; [|eauto|cbn]; eauto.
     rewrite (later_intro (Π∧ _)) -later_and; apply later_mono.
     apply (IHHtyped (v :: vs)); simpl; auto with f_equal.
-  * (* App *) admit.
-Admitted.
+  * (* App *)
+    rewrite -(@wp_bind _ _ (e1.[env_subst vs]) [AppLCtx (e2.[env_subst vs])]) /=.
+    rewrite -wp_impl_l -and_intro; eauto.
+    apply (always_intro _ _), forall_intro=> v/=; apply impl_intro_l.
+    rewrite -(@wp_bind _ _ (e2.[env_subst vs]) [AppRCtx v]) /=.
+    rewrite -wp_impl_l /=; apply and_intro.
+    2: etransitivity; [|apply IHHtyped2]; eauto using and_elim_r.
+    rewrite and_elim_l. apply always_mono.
+    apply forall_intro =>v'.
+    rewrite forall_elim.
+    apply impl_intro_l.
+    rewrite (later_intro (interp τ1 v')).
+    apply impl_elim_r.
+Qed.
 
 End foo.
