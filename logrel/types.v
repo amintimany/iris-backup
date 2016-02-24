@@ -473,18 +473,18 @@ Proof.
     rewrite or_elim; [apply impl_elim_l| |];
     rewrite exist_elim; eauto; [intros v1| intros v2];
     apply const_elim_l; intros H; rewrite H.
-    - rewrite -wp_case_inl; eauto using to_of_val.
-      rewrite -impl_intro_r; eauto.
+    - rewrite -impl_intro_r; eauto.
       rewrite -later_and later_mono; eauto.
+      rewrite -wp_case_inl; eauto using to_of_val.
       specialize (IHHtyped2 (v1::vs)).
       erewrite <- typed_subst_head_simpl in IHHtyped2 by (cbn; eauto).
-      asimpl. apply IHHtyped2; cbn; auto.
-    - rewrite -wp_case_inr; eauto using to_of_val.
-      rewrite -impl_intro_r; eauto.
+      asimpl. rewrite -IHHtyped2; cbn; auto.
+    - rewrite -impl_intro_r; eauto.
       rewrite -later_and later_mono; eauto.
+      rewrite -wp_case_inr; eauto using to_of_val.
       specialize (IHHtyped3 (v2::vs)).
       erewrite <- typed_subst_head_simpl in IHHtyped3 by (cbn; eauto).
-      asimpl. apply IHHtyped3; cbn; auto.
+      asimpl. rewrite -IHHtyped3; cbn; auto.
   * (* lam *) rewrite -wp_value//=.
     apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
     rewrite -wp_lam ?to_of_val //=.

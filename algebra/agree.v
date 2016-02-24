@@ -40,8 +40,8 @@ Proof.
     + by split.
     + by intros x y Hxy; split; intros; symmetry; apply Hxy; auto; apply Hxy.
     + intros x y z Hxy Hyz; split; intros n'; intros.
-      * transitivity (agree_is_valid y n'). by apply Hxy. by apply Hyz.
-      * transitivity (y n'). by apply Hxy. by apply Hyz, Hxy.
+      * trans (agree_is_valid y n'). by apply Hxy. by apply Hyz.
+      * trans (y n'). by apply Hxy. by apply Hyz, Hxy.
   - intros n x y Hxy; split; intros; apply Hxy; auto.
   - intros n c; apply and_wlog_r; intros;
       symmetry; apply (chain_cauchy c); naive_solver.
@@ -61,7 +61,7 @@ Instance agree_unit : Unit (agree A) := id.
 Instance agree_minus : Minus (agree A) := λ x y, x.
 Instance: Comm (≡) (@op (agree A) _).
 Proof. intros x y; split; [naive_solver|by intros n (?&?&Hxy); apply Hxy]. Qed.
-Definition agree_idemp (x : agree A) : x ⋅ x ≡ x.
+Lemma agree_idemp (x : agree A) : x ⋅ x ≡ x.
 Proof. split; naive_solver. Qed.
 Instance: ∀ n : nat, Proper (dist n ==> impl) (@validN (agree A) _ n).
 Proof.
@@ -74,8 +74,8 @@ Proof.
   intros n x y1 y2 [Hy' Hy]; split; [|done].
   split; intros (?&?&Hxy); repeat (intro || split);
     try apply Hy'; eauto using agree_valid_le.
-  - etransitivity; [apply Hxy|apply Hy]; eauto using agree_valid_le.
-  - etransitivity; [apply Hxy|symmetry; apply Hy, Hy'];
+  - etrans; [apply Hxy|apply Hy]; eauto using agree_valid_le.
+  - etrans; [apply Hxy|symmetry; apply Hy, Hy'];
       eauto using agree_valid_le.
 Qed.
 Instance: Proper (dist n ==> dist n ==> dist n) (@op (agree A) _).
@@ -132,9 +132,9 @@ Proof. intros [??]; split; naive_solver eauto using agree_valid_le. Qed.
 
 (** Internalized properties *)
 Lemma agree_equivI {M} a b : (to_agree a ≡ to_agree b)%I ≡ (a ≡ b : uPred M)%I.
-Proof. split. by intros [? Hv]; apply (Hv n). apply: to_agree_ne. Qed.
+Proof. do 2 split. by intros [? Hv]; apply (Hv n). apply: to_agree_ne. Qed.
 Lemma agree_validI {M} x y : ✓ (x ⋅ y) ⊑ (x ≡ y : uPred M).
-Proof. by intros r n _ ?; apply: agree_op_inv. Qed.
+Proof. split=> r n _ ?; by apply: agree_op_inv. Qed.
 End agree.
 
 Arguments agreeC : clear implicits.

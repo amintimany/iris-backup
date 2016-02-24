@@ -50,6 +50,17 @@ Inductive val :=
   | InjRV (v : val)
   | LocV (l : loc).
 
+Global Instance base_lit_dec_eq (l1 l2 : base_lit) : Decision (l1 = l2).
+Proof. solve_decision. Defined.
+Global Instance un_op_dec_eq (op1 op2 : un_op) : Decision (op1 = op2).
+Proof. solve_decision. Defined.
+Global Instance bin_op_dec_eq (op1 op2 : bin_op) : Decision (op1 = op2).
+Proof. solve_decision. Defined.
+Global Instance expr_dec_eq (e1 e2 : expr) : Decision (e1 = e2).
+Proof. solve_decision. Defined.
+Global Instance val_dec_eq (v1 v2 : val) : Decision (v1 = v2).
+Proof. solve_decision. Defined.
+
 Delimit Scope lang_scope with L.
 Bind Scope lang_scope with expr val.
 
@@ -226,6 +237,8 @@ Definition atomic (e: expr) : Prop :=
   | Load e => is_Some (to_val e)
   | Store e1 e2 => is_Some (to_val e1) ∧ is_Some (to_val e2)
   | Cas e0 e1 e2 => is_Some (to_val e0) ∧ is_Some (to_val e1) ∧ is_Some (to_val e2)
+  (* Make "skip" atomic *)
+  | App (Rec _ _ (Lit _)) (Lit _) => True
   | _ => False
   end.
 
@@ -277,15 +290,24 @@ Proof. intros [??? -> -> ?]; eauto using fill_not_val, values_head_stuck. Qed.
 Lemma atomic_not_val e : atomic e → to_val e = None.
 Proof. destruct e; naive_solver. Qed.
 
+Lemma atomic_fill_item Ki e : atomic (fill_item Ki e) → is_Some (to_val e).
+Proof.
+  intros. destruct Ki; simplify_eq/=; destruct_conjs;
+    repeat (case_match || contradiction); eauto.
+Qed.
+
 Lemma atomic_fill K e : atomic (fill K e) → to_val e = None → K = [].
 Proof.
-  rewrite eq_None_not_Some.
-  destruct K as [|[]]; naive_solver eauto using fill_val.
+  destruct K as [|Ki K]; [done|].
+  rewrite eq_None_not_Some=> /= ? []; eauto using atomic_fill_item, fill_val.
 Qed.
 
 Lemma atomic_head_step e1 σ1 e2 σ2 ef :
   atomic e1 → head_step e1 σ1 e2 σ2 ef → is_Some (to_val e2).
-Proof. destruct 2; simpl; rewrite ?to_of_val; naive_solver. Qed.
+Proof.
+  destruct 2; simpl; rewrite ?to_of_val; try by eauto.
+  repeat (case_match || contradiction || simplify_eq/=); eauto.
+Qed.
 
 Lemma atomic_step e1 σ1 e2 σ2 ef :
   atomic e1 → prim_step e1 σ1 e2 σ2 ef → is_Some (to_val e2).

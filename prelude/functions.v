@@ -27,5 +27,4 @@ Section functions.
   Lemma fn_lookup_alter_ne (g : T → T) (f : A → T) a b :
     a ≠ b → alter g a f b = f b.
   Proof. unfold alter, fn_alter. by destruct (decide (a = b)). Qed.
-
 End functions.

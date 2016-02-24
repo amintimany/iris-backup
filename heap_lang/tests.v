@@ -33,10 +33,10 @@ Section LiftingTests.
      nclose N ⊆ E → heap_ctx N ⊑ || heap_e @ E {{ λ v, v = '2 }}.
   Proof.
     rewrite /heap_e=>HN. rewrite -(wp_mask_weaken N E) //.
-    wp> eapply wp_alloc; eauto. apply forall_intro=>l; apply wand_intro_l.
-    wp_rec. wp> eapply wp_load; eauto with I. apply sep_mono_r, wand_intro_l.
-    wp_bin_op. wp> eapply wp_store; eauto with I. apply sep_mono_r, wand_intro_l.
-    wp_rec. wp> eapply wp_load; eauto with I. apply sep_mono_r, wand_intro_l.
+    wp eapply wp_alloc; eauto. apply forall_intro=>l; apply wand_intro_l.
+    wp_let. wp eapply wp_load; eauto with I. apply sep_mono_r, wand_intro_l.
+    wp_op. wp eapply wp_store; eauto with I. apply sep_mono_r, wand_intro_l.
+    wp_seq. wp eapply wp_load; eauto with I. apply sep_mono_r, wand_intro_l.
       by apply const_intro.
   Qed.
 
@@ -49,50 +49,42 @@ Section LiftingTests.
       if: "x" ≤ '0 then -FindPred (-"x" + '2) '0 else FindPred "x" '0.
 
   Lemma FindPred_spec n1 n2 E Φ :
-    (■ (n1 < n2) ∧ Φ '(n2 - 1)) ⊑ || FindPred 'n2 'n1 @ E {{ Φ }}.
+    n1 < n2 → 
+    Φ '(n2 - 1) ⊑ || FindPred 'n2 'n1 @ E {{ Φ }}.
   Proof.
-    revert n1; apply löb_all_1=>n1.
-    rewrite (comm uPred_and (■ _)%I) assoc; apply const_elim_r=>?.
-    (* first need to do the rec to get a later *)
-    wp_rec>.
-    (* FIXME: ssr rewrite fails with "Error: _pattern_value_ is used in conclusion." *)
-    rewrite ->(later_intro (Φ _)); rewrite -!later_and; apply later_mono.
-    wp_rec. wp_bin_op. wp_rec. wp_bin_op=> ?; wp_if.
+    revert n1. wp_rec=>n1 Hn.
+    wp_let. wp_op. wp_let. wp_op=> ?; wp_if.
     - rewrite (forall_elim (n1 + 1)) const_equiv; last omega.
-      by rewrite left_id impl_elim_l.
-    - wp_value. assert (n1 = n2 - 1) as -> by omega; auto with I.
+      by rewrite left_id -always_wand_impl always_elim wand_elim_r.
+    - assert (n1 = n2 - 1) as -> by omega; auto with I.
   Qed.
 
   Lemma Pred_spec n E Φ : ▷ Φ (LitV (n - 1)) ⊑ || Pred 'n @ E {{ Φ }}.
   Proof.
-    wp_rec>; apply later_mono; wp_bin_op=> ?; wp_if.
-    - wp_un_op. wp_bin_op.
-      ewp apply FindPred_spec.
-      apply and_intro; first auto with I omega.
-      wp_un_op. by replace (n - 1) with (- (-n + 2 - 1)) by omega.
-    - ewp apply FindPred_spec. auto with I omega.
+    wp_lam. wp_op=> ?; wp_if.
+    - wp_op. wp_op.
+      ewp apply FindPred_spec; last omega.
+      wp_op. by replace (n - 1) with (- (-n + 2 - 1)) by omega.
+    - by ewp apply FindPred_spec; eauto with omega.
   Qed.
 
   Lemma Pred_user E :
     (True : iProp) ⊑ || let: "x" := Pred '42 in Pred "x" @ E {{ λ v, v = '40 }}.
   Proof.
-    intros. ewp> apply Pred_spec. wp_rec. ewp> apply Pred_spec. auto with I.
+    intros. ewp apply Pred_spec. wp_let. ewp apply Pred_spec. auto with I.
   Qed.
 End LiftingTests.
 
 Section ClosedProofs.
-  Definition Σ : iFunctorG := λ _, authF (constF heapRA).
+  Definition Σ : iFunctorG := #[ heapGF ].
   Notation iProp := (iPropG heap_lang Σ).
 
-  Instance: authG heap_lang Σ heapRA.
-  Proof. split; try apply _. by exists 1%nat. Qed.
-
-  Lemma heap_e_hoare σ : {{ ownP σ : iProp }} heap_e {{ λ v, v = '2 }}.
+  Lemma heap_e_closed σ : {{ ownP σ : iProp }} heap_e {{ λ v, v = '2 }}.
   Proof.
     apply ht_alt. rewrite (heap_alloc ⊤ nroot); last by rewrite nclose_nroot.
     apply wp_strip_pvs, exist_elim=> ?. rewrite and_elim_l.
     rewrite -heap_e_spec; first by eauto with I. by rewrite nclose_nroot.
   Qed.
 
-  Print Assumptions heap_e_hoare.
+  Print Assumptions heap_e_closed.
 End ClosedProofs.

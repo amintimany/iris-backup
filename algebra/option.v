@@ -29,7 +29,7 @@ Proof.
   - intros n; split.
     + by intros [x|]; constructor.
     + by destruct 1; constructor.
-    + destruct 1; inversion_clear 1; constructor; etransitivity; eauto.
+    + destruct 1; inversion_clear 1; constructor; etrans; eauto.
   - by inversion_clear 1; constructor; apply dist_S.
   - intros n c; unfold compl, option_compl.
     destruct (Some_dec (c 1)) as [[x Hx]|].
@@ -138,7 +138,7 @@ Lemma option_equivI {M} (x y : option A) :
   (x ≡ y)%I ≡ (match x, y with
                | Some a, Some b => a ≡ b | None, None => True | _, _ => False
                end : uPred M)%I.
-Proof. split. by destruct 1. by destruct x, y; try constructor. Qed.
+Proof. do 2 split. by destruct 1. by destruct x, y; try constructor. Qed.
 Lemma option_validI {M} (x : option A) :
   (✓ x)%I ≡ (match x with Some a => ✓ a | None => True end : uPred M)%I.
 Proof. by destruct x. Qed.

@@ -1,5 +1,5 @@
-From algebra Require Export auth.
-From program_logic Require Export invariants ghost_ownership.
+From algebra Require Export auth upred_tactics.
+From program_logic Require Export invariants global_functor.
 Import uPred.
 
 Class authG Λ Σ (A : cmraT) `{Empty A} := AuthG {
@@ -8,6 +8,11 @@ Class authG Λ Σ (A : cmraT) `{Empty A} := AuthG {
   (* TODO: Once we switched to RAs, this can be removed. *)
   auth_timeless (a : A) :> Timeless a;
 }.
+
+Definition authGF (A : cmraT) : iFunctor := constF (authRA A).
+Instance authGF_inGF (A : cmraT) `{inGF Λ Σ (authGF A)}
+  `{CMRAIdentity A, ∀ a : A, Timeless a} : authG Λ Σ A.
+Proof. split; try apply _. apply: inGF_inG. Qed.
 
 Section definitions.
   Context `{authG Λ Σ A} (γ : gname).
@@ -35,10 +40,10 @@ Section auth.
   Proof. by rewrite /auth_own=> a b ->. Qed.
   Global Instance auth_own_proper γ : Proper ((≡) ==> (≡)) (auth_own γ).
   Proof. by rewrite /auth_own=> a b ->. Qed.
-  Lemma auto_own_op γ a b :
+  Lemma auth_own_op γ a b :
     auth_own γ (a ⋅ b) ≡ (auth_own γ a ★ auth_own γ b)%I.
   Proof. by rewrite /auth_own -own_op auth_frag_op. Qed.
-  Lemma auto_own_valid γ a : auth_own γ a ⊑ ✓ a.
+  Lemma auth_own_valid γ a : auth_own γ a ⊑ ✓ a.
   Proof. by rewrite /auth_own own_valid auth_validI. Qed.
 
   Lemma auth_alloc E N a :
@@ -49,11 +54,10 @@ Section auth.
     { by eapply (own_alloc (Auth (Excl a) a) N). }
     rewrite pvs_frame_l. rewrite -(pvs_mask_weaken N E) //. apply pvs_strip_pvs.
     rewrite sep_exist_l. apply exist_elim=>γ. rewrite -(exist_intro γ).
-    transitivity (▷ auth_inv γ φ ★ auth_own γ a)%I.
+    trans (▷ auth_inv γ φ ★ auth_own γ a)%I.
     { rewrite /auth_inv -(exist_intro a) later_sep.
-      rewrite const_equiv // left_id.
-      rewrite [(_ ★ ▷ φ _)%I]comm -assoc. apply sep_mono; first done.
-      rewrite -later_intro /auth_own -own_op auth_both_op. done. }
+      rewrite const_equiv // left_id. ecancel [▷ φ _]%I.
+      by rewrite -later_intro /auth_own -own_op auth_both_op. }
     rewrite (inv_alloc N) /auth_ctx pvs_frame_r. apply pvs_mono.
     by rewrite always_and_sep_l.
   Qed.
@@ -76,8 +80,7 @@ Section auth.
     { by move=>n ? ? /timeless_iff ->. }
     { by eauto with I. }
     rewrite const_equiv // left_id comm.
-    apply sep_mono; first done.
-    by rewrite sep_elim_l.
+    apply sep_mono_r. by rewrite sep_elim_l.
   Qed.
 
   Lemma auth_closing `{!LocalUpdate Lv L} E γ a a' :
@@ -86,6 +89,7 @@ Section auth.
     ⊑ (|={E}=> ▷ auth_inv γ φ ★ auth_own γ (L a)).
   Proof.
     intros HL Hv. rewrite /auth_inv /auth_own -(exist_intro (L a ⋅ a')).
+    (* TODO it would be really nice to use cancel here *)
     rewrite later_sep [(_ ★ ▷φ _)%I]comm -assoc.
     rewrite -pvs_frame_l. apply sep_mono; first done.
     rewrite const_equiv // left_id -later_intro -own_op.
@@ -116,9 +120,9 @@ Section auth.
     rewrite (auth_opened (E ∖ N)) !pvs_frame_r !sep_exist_r.
     apply (fsa_strip_pvs fsa). apply exist_elim=>a'.
     rewrite (forall_elim a'). rewrite [(▷_ ★ _)%I]comm.
-    (* Getting this wand eliminated is really annoying. *)
-    rewrite [(■_ ★ _)%I]comm -!assoc [(▷φ _ ★ _ ★ _)%I]assoc [(▷φ _ ★ _)%I]comm.
-    rewrite wand_elim_r fsa_frame_l.
+    eapply wand_apply_r; first (by eapply (wand_frame_l (own γ _))); last first.
+    { rewrite assoc [(_ ★ own _ _)%I]comm -assoc. done. }
+    rewrite fsa_frame_l.
     apply (fsa_mono_pvs fsa)=> x.
     rewrite sep_exist_l; apply exist_elim=> L.
     rewrite sep_exist_l; apply exist_elim=> Lv.
@@ -141,7 +145,7 @@ Section auth.
     P ⊑ fsa E Ψ.
   Proof.
     intros ??? HP. eapply auth_fsa with N γ a; eauto.
-    rewrite HP; apply sep_mono; first done; apply forall_mono=> a'.
+    rewrite HP; apply sep_mono_r, forall_mono=> a'.
     apply wand_mono; first done. apply (fsa_mono fsa)=> b.
     rewrite -(exist_intro L). by repeat erewrite <-exist_intro by apply _.
   Qed.

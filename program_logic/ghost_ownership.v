@@ -1,3 +1,4 @@
+From prelude Require Export functions.
 From algebra Require Export iprod.
 From program_logic Require Export pviewshifts.
 From program_logic Require Import ownership.
@@ -5,28 +6,30 @@ Import uPred.
 
 (** Index of a CMRA in the product of global CMRAs. *)
 Definition gid := nat.
+
 (** Name of one instance of a particular CMRA in the ghost state. *)
 Definition gname := positive.
+
 (** The global CMRA: Indexed product over a gid i to (gname --fin--> Σ i) *)
 Definition globalF (Σ : gid → iFunctor) : iFunctor :=
   iprodF (λ i, mapF gname (Σ i)).
+Notation iFunctorG := (gid → iFunctor).
+Notation iPropG Λ Σ := (iProp Λ (globalF Σ)).
 
-Class inG (Λ : language) (Σ : gid → iFunctor) (A : cmraT) := InG {
+Class inG (Λ : language) (Σ : iFunctorG) (A : cmraT) := InG {
   inG_id : gid;
   inG_prf : A = Σ inG_id (laterC (iPreProp Λ (globalF Σ)))
 }.
 
 Definition to_globalF `{inG Λ Σ A} (γ : gname) (a : A) : iGst Λ (globalF Σ) :=
   iprod_singleton inG_id {[ γ := cmra_transport inG_prf a ]}.
-Definition own `{inG Λ Σ A} (γ : gname) (a : A) : iProp Λ (globalF Σ) :=
+Definition own `{inG Λ Σ A} (γ : gname) (a : A) : iPropG Λ Σ :=
   ownG (to_globalF γ a).
 Instance: Params (@to_globalF) 5.
 Instance: Params (@own) 5.
 Typeclasses Opaque to_globalF own.
 
-Notation iPropG Λ Σ := (iProp Λ (globalF Σ)).
-Notation iFunctorG := (gid → iFunctor).
-
+(** Properties about ghost ownership *)
 Section global.
 Context `{i : inG Λ Σ A}.
 Implicit Types a : A.
