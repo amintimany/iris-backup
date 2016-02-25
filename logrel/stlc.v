@@ -24,8 +24,7 @@ Instance Subst_expr : Subst expr. derive. Defined.
 Instance SubstLemmas_expr : SubstLemmas expr. derive. Qed.
 
 Inductive val :=
-  | LamV (e : {bind 1 of expr}) (* These are recursive lambdas.
-                                   The *inner* binder is the recursive call! *)
+  | LamV (e : {bind 1 of expr})
   | UnitV
   | PairV (v1 v2 : val)
   | InjLV (v : val)
@@ -96,7 +95,7 @@ Inductive head_step : expr -> state -> expr -> state -> option expr -> Prop :=
      to_val e0 = Some v0 →
      head_step (Case (InjR e0) e1 e2) σ e2.[e0/] σ None.
 
-(** Atomic expressions *)
+(** Atomic expressions: we don't consider any atomic operations. *)
 Definition atomic (e: expr) := False.
 
 (** Close reduction under evaluation contexts.
@@ -303,6 +302,8 @@ Ltac do_step tac :=
 Local Hint Extern 1 => do_step auto.
 Local Hint Extern 1 => inv_step.
 
+(** Helper Lemmas for weakestpre. *)
+
 Lemma wp_lam E e1 e2 v Q :
   to_val e2 = Some v → ▷ wp E e1.[e2 /] Q ⊑ wp E (App (Lam e1) e2) Q.
 Proof.
@@ -375,7 +376,8 @@ Inductive typed (Γ : list type) : expr → type → Prop :=
 
 Import uPred.
 
-Section foo.
+(** interp : is a unary logical relation. *)
+Section typed_interp.
 Context {Σ : iFunctor}.
 Implicit Types P Q R : iProp lang Σ.
 Notation "# v" := (of_val v) (at level 20).
@@ -417,85 +419,74 @@ Proof.
   by rewrite Hv.
 Qed.
 
+Local Tactic Notation "smart_wp_bind" uconstr(ctx) uconstr(t) ident(v) :=
+  rewrite -(@wp_bind _ _ _ [ctx]) /= -wp_impl_l; apply and_intro; eauto with itauto;
+  apply (@always_intro _ _ _ t), forall_intro=> v /=; apply impl_intro_l.
+
+Local Tactic Notation "smart_wp_bind" uconstr(ctx) ident(v) :=
+  rewrite -(@wp_bind _ _ _ [ctx]) /= -wp_mono; eauto; intros v; cbn.
+
+Local Hint Extern 1 ((_ ∧ _) ⊑ _)%I => rewrite and_elim_r : itauto.
+Local Hint Extern 1 ((_ ∧ _) ⊑ _)%I => rewrite and_elim_l : itauto.
+Local Hint Extern 1 (_ ⊑ (_ ∧ _))%I => repeat eapply and_intro : itauto.
+Local Hint Extern 1 (_ ⊑ ▷ _)%I => rewrite -later_intro : itauto.
+Local Hint Extern 1 (_ ⊑ ∃ _, _)%I => rewrite -exist_intro : itauto.
+Local Hint Extern 1 (_ ⊑ (_ ∨ _))%I => rewrite -or_intro_l : itauto.
+Local Hint Extern 1 (_ ⊑ (_ ∨ _))%I => rewrite -or_intro_r : itauto.
+
+Local Ltac value_case := rewrite -wp_value/= ?to_of_val //.
+
+
 Lemma typed_interp Γ vs e τ :
   typed Γ e τ → length Γ = length vs →
   Π∧ zip_with interp Γ vs ⊑ wp ⊤ (e.[env_subst vs]) (interp τ).
 Proof.
-  intros Htyped; revert vs; induction Htyped=> vs Hlen /=.
-  * (* var *) destruct (lookup_lt_is_Some_2 vs x) as [v Hv].
+  intros Htyped; revert vs.
+  induction Htyped; intros vs Hlen; cbn.
+  - (* var *)
+    destruct (lookup_lt_is_Some_2 vs x) as [v Hv].
     { by rewrite -Hlen; apply lookup_lt_Some with τ. }
     rewrite /env_subst Hv /= -wp_value; eauto using to_of_val.
     apply big_and_elem_of, elem_of_list_lookup_2 with x.
-    by rewrite lookup_zip_with; simplify_option_eq.
-  * (* unit *) by rewrite -wp_value/=.
-  * (* pair *)
-    rewrite -(@wp_bind _ _ (e1.[env_subst vs]) [PairLCtx e2.[env_subst vs]]) /=.
-    rewrite -wp_impl_l -and_intro; eauto.
-    apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
-    rewrite -(@wp_bind _ _ (e2.[env_subst vs]) [PairRCtx v]) /=.
-    rewrite -wp_impl_l //=.
-    apply and_intro; [|rewrite and_elim_r; eauto].
-    apply (@always_intro _ _ _ (and_always_stable _ _ _ _)), forall_intro=> v'.
+      by rewrite lookup_zip_with; simplify_option_eq.
+  - (* unit *) value_case.
+  - (* pair *)
+    smart_wp_bind (PairLCtx e2.[env_subst vs]) _ v.
     (* weird!: and_alwaysstable is an instance but is not resolved! *)
-    apply impl_intro_l.
-    rewrite -wp_value/= ?to_of_val // -!exist_intro.
-    repeat apply and_intro; eauto; rewrite -later_intro;
-    repeat rewrite and_elim_r + rewrite and_elim_l; eauto; fail.
-  * (* fst *)
-    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [FstCtx]) /=.
-    rewrite -wp_mono; eauto; intros v; cbn.
+    smart_wp_bind (PairRCtx v) (and_always_stable _ _ _ _) v'.
+    value_case; eauto 10 with itauto.
+  - (* fst *)
+    smart_wp_bind (FstCtx) v.
     rewrite exist_elim; eauto; intros v1. rewrite exist_elim; eauto; intros v2.
-    apply const_elim_l.
-    intros H; rewrite H.
-    rewrite -wp_fst; eauto using to_of_val, and_elim_l.    
-  * (* snd *)
-    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [SndCtx]) /=.
-    rewrite -wp_mono; eauto; intros v; cbn.
+    apply const_elim_l; intros H; rewrite H.
+    rewrite -wp_fst; eauto using to_of_val, and_elim_l.
+  - (* snd *)
+    smart_wp_bind SndCtx v.
     rewrite exist_elim; eauto; intros v1. rewrite exist_elim; eauto; intros v2.
     apply const_elim_l; intros H; rewrite H.
     rewrite -wp_snd; eauto using to_of_val, and_elim_r.
-  * (* injl *)
-    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [InjLCtx]) /=.
-    rewrite -wp_mono; eauto; intros v; cbn.
-    rewrite -wp_value/= ?to_of_val // -or_intro_l -!exist_intro.
-    apply and_intro; eauto using later_intro.
-  * (* injr *)
-    rewrite -(@wp_bind _ _ (e.[env_subst vs]) [InjRCtx]) /=.
-    rewrite -wp_mono; eauto; intros v; cbn.
-    rewrite -wp_value/= ?to_of_val // -or_intro_r -!exist_intro.
-    apply and_intro; eauto using later_intro.
-  * (* case *)
-    rewrite -(@wp_bind _ _ (e0.[env_subst vs]) [CaseCtx _ _]) /=.
-    rewrite -wp_impl_l -and_intro; eauto.
-    apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
-    (** Lemma to be used later *)
+  - (* injl *) smart_wp_bind InjLCtx v; value_case; eauto 7 with itauto.
+  - (* injr *) smart_wp_bind InjRCtx v; value_case; eauto 7 with itauto.
+  - (* case *)
+    smart_wp_bind (CaseCtx _ _) _ v.
     rewrite (later_intro (Π∧ zip_with interp Γ vs)).
     rewrite or_elim; [apply impl_elim_l| |];
     rewrite exist_elim; eauto; [intros v1| intros v2];
-    apply const_elim_l; intros H; rewrite H.
-    - rewrite -impl_intro_r; eauto.
-      rewrite -later_and later_mono; eauto.
-      rewrite -wp_case_inl; eauto using to_of_val.
-      specialize (IHHtyped2 (v1::vs)).
-      erewrite <- typed_subst_head_simpl in IHHtyped2 by (cbn; eauto).
-      asimpl. rewrite -IHHtyped2; cbn; auto.
-    - rewrite -impl_intro_r; eauto.
-      rewrite -later_and later_mono; eauto.
-      rewrite -wp_case_inr; eauto using to_of_val.
-      specialize (IHHtyped3 (v2::vs)).
-      erewrite <- typed_subst_head_simpl in IHHtyped3 by (cbn; eauto).
-      asimpl. rewrite -IHHtyped3; cbn; auto.
-  * (* lam *) rewrite -wp_value//=.
-    apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
+    apply const_elim_l; intros H; rewrite H;
+    rewrite -impl_intro_r // -later_and later_mono; eauto;
+    [rewrite -wp_case_inl | rewrite -wp_case_inr]; eauto using to_of_val;
+    asimpl; [specialize (IHHtyped2 (v1::vs)) | specialize (IHHtyped3 (v2::vs))];
+    erewrite <- ?typed_subst_head_simpl in * by (cbn; eauto);
+    [rewrite -IHHtyped2 | rewrite -IHHtyped3]; cbn; auto.
+  - (* lam *)
+    value_case; apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
     rewrite -wp_lam ?to_of_val //=.
     asimpl. erewrite typed_subst_head_simpl; [|eauto|cbn]; eauto.
     rewrite (later_intro (Π∧ _)) -later_and; apply later_mono.
     apply (IHHtyped (v :: vs)); simpl; auto with f_equal.
-  * (* App *)
-    rewrite -(@wp_bind _ _ (e1.[env_subst vs]) [AppLCtx (e2.[env_subst vs])]) /=.
-    rewrite -wp_impl_l -and_intro; eauto.
-    apply (always_intro _ _), forall_intro=> v/=; apply impl_intro_l.
-    rewrite -(@wp_bind _ _ (e2.[env_subst vs]) [AppRCtx v]) /=.
+  - (* app *)
+    smart_wp_bind (AppLCtx (e2.[env_subst vs])) _ v.
+    rewrite -(@wp_bind _ _ _ [AppRCtx v]) /=.
     rewrite -wp_impl_l /=; apply and_intro.
     2: etransitivity; [|apply IHHtyped2]; eauto using and_elim_r.
     rewrite and_elim_l. apply always_mono.
@@ -506,4 +497,4 @@ Proof.
     apply impl_elim_r.
 Qed.
 
-End foo.
+End typed_interp.
