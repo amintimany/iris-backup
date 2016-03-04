@@ -22,7 +22,7 @@ Module lang.
   | Fold (e : expr)
   | Unfold (e : expr)
   (* Polymorphic Types *)
-  | TLam (e : {bind 1 of expr})
+  | TLam (e : expr)
   | TApp (e : expr).
 
   Instance Ids_expr : Ids expr. derive. Defined.
@@ -338,6 +338,13 @@ Section lang_rules.
     - by rewrite right_id.
   Qed.
 
+  Lemma wp_TLam E e Q :
+    ▷ wp E e Q ⊑ wp E (TApp (TLam e)) Q.
+  Proof.
+    rewrite -(wp_lift_pure_det_step (TApp _) e None) //=; auto.
+    - by rewrite right_id.
+  Qed.
+  
   Lemma wp_fst E e1 v1 e2 v2 Q :
     to_val e1 = Some v1 → to_val e2 = Some v2 →
     ▷Q v1 ⊑ wp E (Fst (Pair e1 e2)) Q.
@@ -458,6 +465,17 @@ Proof. intros H; induction H; auto using closed_type, closed_ctx_S with omega. Q
 Lemma closed_ctx_closed_type (k : nat) (Γ : list type) (x : var) (τ : type) :
   closed_ctx k Γ → Γ !! x = Some τ → closed_type k τ.
 Proof. intros; eapply Forall_lookup; eauto. Qed.
+
+Lemma closed_ctx_map (k k' : nat) (Γ : list type) (f : type → type) :
+  closed_ctx k Γ →
+  (∀ τ, closed_type k τ → closed_type k' (f τ)) →
+  closed_ctx k' (map f Γ).
+Proof.
+  revert k k' f.
+  induction Γ; intros k k' f H1 H2; cbn; constructor;
+  inversion H1; subst; auto.
+  eapply IHΓ; eauto.
+Qed.
 
 Program Fixpoint zipwith_Forall {A : Type} {P : A → Prop} (l : list A) (H : Forall P l) :
   list ({x : A | P x}) :=
@@ -941,6 +959,13 @@ Section typed_interp.
     apply cofe_mor_car_ne; trivial.
     rewrite H1; trivial.
   Qed.
+
+  
+  Definition val_to_iprop_always_stable (f : leibniz_val -n> iProp lang Σ) :=
+    ∀ v : val, AlwaysStable ((cofe_mor_car _ _ f) v).
+
+  Arguments val_to_iprop_always_stable /.
+  
   
   Definition interp_unit : leibniz_val -n> iProp lang Σ :=
     {|
@@ -1016,23 +1041,23 @@ Section typed_interp.
     {|
       cofe_mor_car :=
         λ w,
-        (∃ e, w = TLamV e ∧
-              □ (|| e @ ⊤ {{λ v, ∀ (τ'i : (leibniz_val -n> iProp lang Σ)), ▷ (τi τ'i v)}}))%I
+        (∀ (τ'i : (leibniz_val -n> iProp lang Σ)) (τ'iAS : val_to_iprop_always_stable τ'i),
+            □ (|| TApp (# w) @ ⊤ {{λ v, ▷ (τi τ'i v)}}))%I
     |}.
 
   Instance interp_forall_proper : Proper ((≡) ==> (≡)) interp_forall.
   Proof.
     intros τ τ' H1 v; cbn.
-    apply exist_proper=>e; apply and_proper; trivial.
-    apply always_proper; apply wp_proper=>v'; apply forall_proper=>τi.
+    apply forall_proper => τ'i. apply forall_proper => τ'iAS.
+    apply always_proper; apply wp_proper =>v'.
     rewrite H1; trivial.
   Qed.
     
   Instance interp_forall_ne n : Proper (dist n ==> dist n) interp_forall.
   Proof.
     intros τ τ' H1 v; cbn.
-    apply exist_ne=>e; apply and_ne; trivial.
-    apply always_ne; apply wp_ne=>v'; apply forall_ne=>τi.
+    apply forall_ne => τ'i. apply forall_ne => τ'iAS.
+    apply always_ne; apply wp_ne =>v'.
     rewrite H1; trivial.
   Qed.
 
@@ -1177,7 +1202,7 @@ Section typed_interp.
   Qed.
 
   Class VlistAlwaysStable {k} (Δ : Vlist (leibniz_val -n> iProp lang Σ) k) :=
-    vlistalwaysstable : Forall (λ f, (∀ v : val, AlwaysStable ((cofe_mor_car _ _ f) v))) (` Δ).
+    vlistalwaysstable : Forall val_to_iprop_always_stable (` Δ).
   
   Instance interp_always_stable
            k τ H (Δ : Vlist (leibniz_val -n> iProp lang Σ) k)
@@ -1206,6 +1231,37 @@ Section typed_interp.
            {HΔ : VlistAlwaysStable Δ}
     : AlwaysStable (Π∧ zip_with (λ τ v, interp k (` τ) (proj2_sig τ) Δ v) (closed_ctx_list _ Γ Hctx) vs)%I.
   Proof. typeclasses eauto. Qed.
+
+  Instance alwyas_stable_Vlist_cons k f Δ
+           (Hf : val_to_iprop_always_stable f)
+           {HΔ : VlistAlwaysStable Δ}
+    : VlistAlwaysStable (@Vlist_cons _ k f Δ).
+  Proof. constructor; auto. Qed.
+
+
+  Lemma type_context_closed_irrel
+        (k : nat) (Δ : Vlist (leibniz_val -n> iProp lang Σ) k) (Γ : list type)
+        (vs : list leibniz_val)
+        (Hctx Hctx' : closed_ctx k Γ) :
+    (Π∧ zip_with
+          (λ (τ : {τ : type | closed_type k τ}) (v0 : leibniz_val),
+           ((interp k (` τ) (proj2_sig τ)) Δ) v0)
+          (closed_ctx_list k Γ Hctx)
+          vs)
+      ⊑
+      Π∧ zip_with
+           (λ (τ : {τ : type | closed_type k τ}) (v : leibniz_val),
+            ((interp k (` τ) (proj2_sig τ)) Δ) v)
+           (closed_ctx_list k Γ Hctx')
+           vs.
+  Proof.
+    revert vs.
+    induction Γ; cbn; auto.
+    destruct vs; cbn; auto.
+    apply and_mono.
+    - apply interp_closed_irrel.
+    - apply IHΓ.
+  Qed.    
 
   Ltac ipropsimpl :=
     repeat
@@ -1277,37 +1333,89 @@ Section typed_interp.
       smart_wp_bind (CaseCtx _ _) _ v. cbn.
       rewrite (later_intro (Π∧ zip_with
            (λ (τ : {τ : type | closed_type k τ}) (v0 : leibniz_val),
-            ((interp k (` τ) (proj2_sig τ)) Δ) v0) (closed_ctx_list k Γ Hctx) vs)).
-    rewrite or_elim; [apply impl_elim_l| |];
-    rewrite exist_elim; eauto; [intros v1| intros v2];
-    apply const_elim_l; intros H; rewrite H;
-    rewrite -impl_intro_r // -later_and later_mono; eauto;
-    [rewrite -wp_case_inl | rewrite -wp_case_inr]; eauto using to_of_val.
-    asimpl.
-    
-    specialize (IHHtyped2 Δ HC (v1::vs)). | specialize (IHHtyped3 (v2::vs))];
-    erewrite <- ?typed_subst_head_simpl in * by (cbn; eauto);
-    [rewrite -IHHtyped2 | rewrite -IHHtyped3]; cbn; auto.
-  - (* lam *)
-    value_case; apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
-    rewrite -wp_lam ?to_of_val //=.
-    asimpl. erewrite typed_subst_head_simpl; [|eauto|cbn]; eauto.
-    rewrite (later_intro (Π∧ _)) -later_and; apply later_mono.
-    apply (IHHtyped (v :: vs)); simpl; auto with f_equal.
-  - (* app *)
-    smart_wp_bind (AppLCtx (e2.[env_subst vs])) _ v.
-    rewrite -(@wp_bind _ _ _ [AppRCtx v]) /=.
-    rewrite -wp_impl_l /=; apply and_intro.
-    2: etransitivity; [|apply IHHtyped2]; eauto using and_elim_r.
-    rewrite and_elim_l. apply always_mono.
-    apply forall_intro =>v'.
-    rewrite forall_elim.
-    apply impl_intro_l.
-    rewrite (later_intro (interp τ1 v')).
-    apply impl_elim_r.
+            ((interp k (` τ) (proj2_sig τ)) Δ) v0) (closed_ctx_list k Γ Hctx) vs));
+        rewrite or_elim; [apply impl_elim_l| |].
+      + rewrite exist_elim; eauto; intros v'.
+        apply const_elim_l; intros H; rewrite H.
+        rewrite -impl_intro_r // -later_and later_mono; eauto.
+        rewrite -wp_case_inl; eauto using to_of_val.
+        asimpl.
+        specialize (IHHtyped2 Δ (typed_closed_ctx _ _ _ _ Htyped2) HC HΔ (v'::vs)).
+        erewrite <- ?typed_subst_head_simpl in * by (cbn; eauto).
+        rewrite -IHHtyped2; cbn; auto.
+        rewrite interp_closed_irrel type_context_closed_irrel /closed_ctx_list.
+        apply later_mono, and_intro; eauto 3 with itauto.
+      + rewrite exist_elim; eauto; intros v'.
+        apply const_elim_l; intros H; rewrite H.
+        rewrite -impl_intro_r // -later_and later_mono; eauto.
+        rewrite -wp_case_inr; eauto using to_of_val.
+        asimpl.
+        specialize (IHHtyped3 Δ (typed_closed_ctx _ _ _ _ Htyped3) HC HΔ (v'::vs)).
+        erewrite <- ?typed_subst_head_simpl in * by (cbn; eauto).
+        rewrite -IHHtyped3; cbn; auto.
+        rewrite interp_closed_irrel type_context_closed_irrel /closed_ctx_list.
+        apply later_mono, and_intro; eauto 3 with itauto.    
+    - (* lam *)
+      value_case; apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l.
+      rewrite -wp_lam ?to_of_val //=.
+      asimpl. erewrite typed_subst_head_simpl; [|eauto|cbn]; eauto.
+      rewrite (later_intro (Π∧ _)) -later_and; apply later_mono.
+      rewrite interp_closed_irrel type_context_closed_irrel /closed_ctx_list.
+      rewrite -(IHHtyped Δ (typed_closed_ctx _ _ _ _ Htyped) (closed_type_arrow_2 HC) HΔ (v :: vs));
+        simpl; auto with f_equal.
+    - (* app *)
+      smart_wp_bind (AppLCtx (e2.[env_subst vs])) _ v.
+      rewrite -(@wp_bind _ _ _ [AppRCtx v]) /=.
+      rewrite -wp_impl_l /=; apply and_intro.
+      2: etransitivity; [|apply IHHtyped2]; eauto using and_elim_r.
+      rewrite and_elim_l. apply always_mono.
+      apply forall_intro =>v'.
+      rewrite forall_elim.
+      apply impl_intro_l.
+      rewrite -(later_intro).
+      etransitivity; [apply impl_elim_r|].
+      apply wp_mono => w.
+      rewrite interp_closed_irrel; trivial.
+    - (* TLam *)
+      value_case; apply forall_intro =>τi; apply forall_intro =>τiAS;
+        apply (always_intro _ _); rewrite -wp_TLam -later_intro.
+      rewrite map_length in IHHtyped.
+      specialize (IHHtyped
+                    (Vlist_cons τi Δ)
+                    (closed_ctx_map
+                       _ _ _ _
+                       Hctx (λ τ, closed_type_S_ren2 τ 1 0 _))
+                    (closed_type_forall HC)
+                    (alwyas_stable_Vlist_cons _ _ _ τiAS)
+                    _
+                    Hlen
+                 ).
+      rewrite -wp_impl_l. apply and_intro;
+        [ apply (always_intro _ _), forall_intro=> v /=; apply impl_intro_l|].
+      2: etransitivity; [|apply IHHtyped].
+      + rewrite and_elim_l. apply later_intro.
+      + rewrite type_context_closed_irrel /closed_ctx_list.
+        clear IHHtyped.
+        induction Γ; cbn; auto.
+        destruct vs; cbn; auto.
+        admit.
+    - smart_wp_bind TAppCtx _ v.
+      cbn.
+      set (τi := interp k _ H Δ).
+      etransitivity; [|].
+      
 
+      apply (@forall_elim _ _ (λ a (∀ v0 : val, AlwaysStable (τ'i v0)), ) τi).
+      
 
-
+        
+      admit.
+    - (* TApp *)
+      admit.
+    - (* Fold *)
+      admit.
+    - (* Unfold *)
+      admit.
 
 
 
