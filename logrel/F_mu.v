@@ -2,6 +2,7 @@ Require Import program_logic.language program_logic.hoare.
 Require Import Autosubst.Autosubst.
 Require Import algebra.upred_big_op.
 
+
 Module lang.
   Inductive expr :=
   | Var (x : var)
@@ -443,10 +444,16 @@ Local Hint Resolve closed_type_prod_1 closed_type_prod_2 closed_type_sum_1
 Lemma closed_type_S (k : nat) (τ : type) : closed_type k τ → closed_type (S k) τ.
 Proof. intros H; induction H; auto using closed_type with omega. Qed.
 
+Lemma closed_type_le (k k' : nat) (τ : type) : k ≤ k' → closed_type k τ → closed_type k' τ.
+Proof. intros H; induction H; auto using closed_type, closed_type_S with omega. Qed.
+
 Definition closed_ctx (k : nat) (Γ : list type) := Forall (closed_type k) Γ.
 
 Lemma closed_ctx_S (k : nat) (Γ : list type) : closed_ctx k Γ → closed_ctx (S k) Γ.
 Proof. intros H. eapply Forall_impl; [| apply closed_type_S]; trivial. Qed.
+
+Lemma closed_ctx_le (k k' : nat) (Γ : list type) : k ≤ k' → closed_ctx k Γ → closed_ctx k' Γ.
+Proof. intros H; induction H; auto using closed_type, closed_ctx_S with omega. Qed.
 
 Lemma closed_ctx_closed_type (k : nat) (Γ : list type) (x : var) (τ : type) :
   closed_ctx k Γ → Γ !! x = Some τ → closed_type k τ.
@@ -492,11 +499,11 @@ Inductive typed (k : nat) (Γ : list type) : expr → type → Prop :=
     typed (S k) (map (λ t, t.[ren (lift 1)]) Γ) e τ →
     typed k Γ (TLam e) (TForall τ)
 | TApp_typed e τ τ':
-    typed k Γ e (TForall τ) → closed_type k τ' → typed k Γ (TApp e) (τ.[τ' .: (ren pred)])
+    typed k Γ e (TForall τ) → closed_type k τ' → typed k Γ (TApp e) (τ.[τ' .: (ren (λ x, x - 1))])
 | TFold e τ :
     typed (S k) (map (λ t, t.[ren (lift 1)]) Γ) e τ →
     typed k Γ (Fold e) (TRec τ)
-| TUnfold e τ : typed k Γ e (TRec τ) → typed k Γ (Unfold e) (τ.[(TRec τ) .: (ren pred)])
+| TUnfold e τ : typed k Γ e (TRec τ) → typed k Γ (Unfold e) (τ.[(TRec τ) .: (ren (λ x, x - 1))])
 .
 
 Lemma closed_type_subst_invariant k τ s1 s2 :
@@ -521,66 +528,64 @@ Proof.
   rewrite -IHn; trivial.
 Qed.
   
-Lemma iter_upren (m n x : nat) : iter m upren (+n) x = if lt_dec x m then x else n + x.
+Lemma iter_upren (m x : nat) f : iter m upren f x = if lt_dec x m then x else m + (f (x - m)).
 Proof.
-  revert n x; induction m; cbn; auto with omega.
-  intros n x; destruct x; cbn; trivial.
+  revert x; induction m; cbn; auto with omega.
+  intros x; destruct x; cbn; trivial.
+  rewrite IHm; repeat destruct lt_dec; auto with omega.  
+Qed.
+  
+Lemma iter_up (m x : nat) (f : var → type) : iter m up f x = if lt_dec x m then ids x else rename (+m) (f (x - m)).
+Proof.
+  revert x; induction m; cbn; auto with omega.
+  intros x; destruct x; cbn; asimpl; trivial.
+  intros x; destruct x; cbn; asimpl; trivial.
   rewrite IHm; repeat destruct lt_dec; auto with omega.
+  asimpl; trivial.
 Qed.
 
 Lemma closed_type_S_ren1:
   ∀ (τ : type) (n m : nat) (k : nat) (Hle : m ≤ k),
     (closed_type (n + k) τ.[ren ((iter m upren) (+n))] → closed_type k τ).
 Proof.
-  induction τ; intros n m k Hle H; inversion H; subst; constructor; eauto 2 with omega.
-  - eapply (IHτ n (S m)); asimpl in *; auto with omega.
-  - rewrite iter_upren in H1; destruct lt_dec; omega.
-  - eapply (IHτ n (S m)); asimpl in *; auto with omega.
+  induction τ; intros n m k Hle H; inversion H; subst; constructor; eauto 2 with omega;
+  try eapply (IHτ n (S m)); asimpl in *; auto with omega.
+  rewrite iter_upren in H1; destruct lt_dec; cbn in *; omega.
 Qed.
 
 Lemma closed_type_S_ren2:
-  ∀ (τ : type) (n m : nat) (k : nat) (Hle : m ≤ k),
+  ∀ (τ : type) (n m : nat) (k : nat),
     (closed_type k τ → closed_type (n + k) τ.[ren ((iter m upren) (+n))]).
 Proof.
-  induction τ; intros n m k Hle H; inversion H; subst; constructor; eauto 2 with omega.
-  - replace (up (ren (iter m upren (+n)))) with
-    (ren (iter (S m) upren (+n))) by (asimpl; trivial).
-    replace (S (n + k)) with (n + (S k)) by omega. auto with omega.
-  - rewrite iter_upren; destruct lt_dec; omega.
-  - replace (up (ren (iter m upren (+n)))) with
-    (ren (iter (S m) upren (+n))) by (asimpl; trivial).
-    replace (S (n + k)) with (n + (S k)) by omega. auto with omega.
+  induction τ; intros n m k H; inversion H; subst; constructor; eauto 2 with omega;
+  try (replace (up (ren (iter m upren (+n)))) with
+    (ren (iter (S m) upren (+n))) by (asimpl; trivial);
+    replace (S (n + k)) with (n + (S k)) by omega; auto with omega).
+  rewrite iter_upren; destruct lt_dec; cbn in *; omega.
 Qed.
 
 Lemma closed_type_pred_ren1:
   ∀ (τ : type) (n m : nat) (k : nat),
-    (closed_type k τ.[ren ((iter m upren) (iter n pred))] → closed_type (n + k) τ).
+    (closed_type k τ.[ren ((iter m upren) (λ x, x - n))] → closed_type (n + k) τ).
 Proof.
-  induction τ; intros n m k H; inversion H; subst; constructor; eauto 2 with omega.
-  - replace (S (n + k)) with (n + (S k)) by omega.
-    apply IHτ with (S m).
-    replace (up (ren (iter m upren (iter n pred)))) with
-    (ren (iter (S m) upren (iter n pred))) in H1 by (asimpl; trivial); trivial.
-  - admit.
-  - replace (S (n + k)) with (n + (S k)) by omega.
-    apply IHτ with (S m).
-    replace (up (ren (iter m upren (iter n pred)))) with
-    (ren (iter (S m) upren (iter n pred))) in H1 by (asimpl; trivial); trivial.
-Admitted.
+  induction τ; intros n m k H; inversion H; subst; constructor; eauto 2 with omega;  
+  try (replace (S (n + k)) with (n + (S k)) by omega;
+  apply IHτ with (S m);
+  replace (up (ren (iter m upren (λ x, x - n)))) with
+  (ren (iter (S m) upren (λ x, x - n))) in H1 by (asimpl; trivial); trivial).
+  rewrite iter_upren in H1; destruct lt_dec; omega.
+Qed.
 
 Lemma closed_type_pred_ren2:
-  ∀ (τ : type) (n m : nat) (k : nat),
-    closed_type (n + k) τ → closed_type k τ.[ren ((iter m upren) (iter n pred))].
+  ∀ (τ : type) (n m : nat) (k : nat) (Hle : m < k),
+    closed_type (n + k) τ → closed_type k τ.[ren ((iter m upren) (λ x, x - n))].
 Proof.
-  induction τ; intros n m k H; inversion H; subst; constructor; eauto 2 with omega.
-  - replace (up (ren (iter m upren (iter n pred)))) with
-    (ren (iter (S m) upren (iter n pred))) by (asimpl; trivial); trivial.
-    eapply (IHτ n (S m)); asimpl in *; auto with omega.
-  - admit.
-  - replace (up (ren (iter m upren (iter n pred)))) with
-    (ren (iter (S m) upren (iter n pred))) by (asimpl; trivial); trivial.
-    eapply (IHτ n (S m)); asimpl in *; auto with omega.
-Admitted.
+  induction τ; intros n m k Hle H; inversion H; subst; constructor; eauto 2 with omega;
+  try (replace (up (ren (iter m upren (λ x, x - n)))) with
+    (ren (iter (S m) upren (λ x, x - n))) by (asimpl; trivial); trivial;
+    eapply (IHτ n (S m)); asimpl in *; auto with omega).
+  rewrite iter_upren; destruct lt_dec; omega.
+Qed.
 
 Lemma closed_ctx_map_S:
   ∀ (k : nat) (Γ : list type), closed_ctx (S k) (map (λ t : type, t.[ren (+1)]) Γ) → closed_ctx k Γ.
@@ -591,52 +596,85 @@ Proof.
   apply IHΓ; trivial.
 Qed.
 
-Lemma typed_closed_type (k : nat) (Γ : list type) (e : expr) (τ : type) :
+Lemma closed_type_subst_up_subst (m : nat) (k : nat) (τ : {bind type}) (τ' : type) :
+  closed_type k τ' → closed_type (m + k) τ → closed_type (m + k) τ.[iter m up (τ' .: ids)].
+Proof.
+  revert m k τ'.
+  induction τ; intros m k τ' H1 H2; try constructor; inversion H2; subst; auto;
+  try (change (up (iter m up (τ' .: ids))) with (iter (S m) up (τ' .: ids));
+        change (S (m + k)) with (S m + k);
+        apply IHτ; cbn; auto using closed_type_S).
+  cbn; rewrite iter_up; destruct lt_dec.
+  constructor; auto.
+  asimpl; apply (closed_type_S_ren2 _ m 0).
+  remember (x - m) as u; destruct u; try constructor; auto with omega.
+Qed.
+
+Lemma closed_type_all_closed_subst (m k : nat) (τ : type) (f : var → type) :
+  (∀ x, closed_type k (f x)) → closed_type (m + k) τ.[iter m up f].
+Proof.
+  revert m k.
+  induction τ; intros m k H; try constructor; auto;
+  try (change (up (iter m up f)) with (iter (S m) up f);
+        change (S (m + k)) with (S m + k);
+        apply IHτ; cbn; auto using closed_type_S).
+  cbn; rewrite iter_up; destruct lt_dec.
+  constructor; auto with omega.
+  asimpl; apply (closed_type_S_ren2 _ m 0); trivial.
+Qed.
+
+Lemma closed_type_rel_closed_subst (n k : nat) (τ : type) (f : var → type) :
+  (∀ x, x < n → closed_type k (f x)) → closed_type n τ → closed_type k τ.[f].
+Proof.
+  revert f n k.
+  induction τ; intros f n k H1 H2; inversion H2; subst; try constructor; cbn; auto;
+  try ((eapply IHτ + eapply IHτ1 + eapply IHτ2); cbn; eauto 2 using closed_type_S; fail);
+  try (eapply IHτ; eauto 2;
+       intros x Hx; destruct x; asimpl;
+       try constructor; auto using (closed_type_S_ren2 _ 1 0) with omega).
+Qed.
+
+Lemma closed_type_subst (k : nat) (τ : {bind type}) (τ' : type) :
+  closed_type k τ' → closed_type (S k) τ → closed_type k τ.[τ' .: ren (λ x, x - 1)].
+Proof.
+  intros H1 H2.
+  assert (HH: ∀ x : nat, x < 1 → (τ' .: ren (λ x0 : var, x0 - 1)) x = τ').
+  { intros x Hx. destruct x; cbn; auto with omega. }
+  destruct k;
+    [erewrite (closed_type_subst_invariant 1 _ _ (λ _, τ')); trivial;
+     apply (closed_type_all_closed_subst 0); trivial|].
+  destruct k;
+    [erewrite (closed_type_subst_invariant 2 _ _ (τ' .: ids 0 .: ids)); trivial;
+     try (apply closed_type_rel_closed_subst with 2); trivial;
+     try (intros x Hx; destruct x; try destruct x; cbn; auto with omega)
+    |].
+  replace (τ.[τ' .: ren (λ x, x - 1)]) with
+  (τ.[ren (upren (λ x, x - 1))].[τ'/]) by (asimpl; trivial).
+  apply (closed_type_subst_up_subst 0); trivial; cbn.
+  apply (closed_type_pred_ren2 _ 1 1); cbn; auto with omega.
+Qed.
+  
+Lemma typed_closed_ctx_closed_type (k : nat) (Γ : list type) (e : expr) (τ : type) :
   typed k Γ e τ → closed_ctx k Γ ∧ closed_type k τ.
 Proof.
-  intros H; induction H; intuition.
-  - eapply closed_ctx_closed_type; eauto.
-  - eauto 3.
-  - eauto 3.
-  - inversion H0; trivial.
-  - inversion H0; auto.
-  - inversion H2; trivial.
-  - apply closed_ctx_map_S; trivial.
-  - inversion H2; subst.
+  intros H; induction H; intuition; eauto 3 using closed_ctx_closed_type;
+  match goal with
+  | [H : closed_ctx _ (_ :: _) |- _] =>
+    inversion H; clear H; subst;
+    auto using closed_ctx_map_S
+  | [H : closed_type _ _ |- _] =>
+    inversion H; clear H; subst;
+    auto using closed_ctx_map_S, closed_type_subst
+  end.
+Qed.
 
-    Lemma closed_type_subst:
-      ∀ (k : nat) (τ : {bind type}) (τ' : type),
-        closed_type k τ' → closed_type (S k) τ → closed_type k τ.[τ' .: ren pred].
-    Proof.
-      intros k τ; revert k.
-      induction τ; intros k τ' H1 H2; try constructor; inversion H2; subst; auto.
-      replace (τ.[up (τ' .: ren Init.Nat.pred)]) with
-      (τ.[up (τ' .: ren Init.Nat.pred)])
+Lemma typed_closed_ctx (k : nat) (Γ : list type) (e : expr) (τ : type) :
+  typed k Γ e τ → closed_ctx k Γ.
+Proof. apply typed_closed_ctx_closed_type. Qed.
 
-      
-      apply (closed_type_pred_ren2).
-
-      asimpl in *.
-      replace (ids 0 .: τ'.[ren (+1)] .: ren (Init.Nat.pred >>> (+1))) with
-      (ids 0 .: τ'.[ren (+1)] .: ids 1 .: ren S).
-      Focus 2.
-      extensionality x.
-      do 3 try destruct x; cbn; trivial.
-      
-      
-      
-      
-      apply closed_type_S_ren with 0 1; auto with omega.
-      asimpl in *.
-      
-
-      
-      
-  - apply closed_ctx_map_S; trivial.
-  - inversion H1; subst.
-
-
-
+Lemma typed_closed_type (k : nat) (Γ : list type) (e : expr) (τ : type) :
+  typed k Γ e τ → closed_type k τ.
+Proof. apply typed_closed_ctx_closed_type. Qed.
 
 Local Hint Extern 1 =>
 match goal with [H : context [length (map _ _)] |- _] => rewrite map_length in H end
@@ -650,9 +688,7 @@ Proof.
             (s1 s2 : nat → A) x, (x ≠ 0 → s1 (pred x) = s2 (pred x)) → up s1 x = up s2 x).
   { intros A H1 H2. rewrite /up=> s1 s2 [|x] //=; auto with f_equal omega. }
   induction Htyped => s1 s2 Hs; f_equal/=; eauto using lookup_lt_Some with omega typed_subst_invariant.
-  sadfas dfasdfas.
 Qed.
-
     
 Import uPred.
 
@@ -665,8 +701,6 @@ Proof.
   - destruct l'; [specialize (H x); inversion H|].
     constructor; [|apply IHl]; intros z; specialize (H z); inversion H; trivial.
 Qed.
-    
-
     
 (** interp : is a unary logical relation. *)
 Section typed_interp.
@@ -1249,7 +1283,9 @@ Section typed_interp.
     apply const_elim_l; intros H; rewrite H;
     rewrite -impl_intro_r // -later_and later_mono; eauto;
     [rewrite -wp_case_inl | rewrite -wp_case_inr]; eauto using to_of_val.
-    asimpl. specialize (IHHtyped2 Δ HC (v1::vs)). | specialize (IHHtyped3 (v2::vs))];
+    asimpl.
+    
+    specialize (IHHtyped2 Δ HC (v1::vs)). | specialize (IHHtyped3 (v2::vs))];
     erewrite <- ?typed_subst_head_simpl in * by (cbn; eauto);
     [rewrite -IHHtyped2 | rewrite -IHHtyped3]; cbn; auto.
   - (* lam *)
