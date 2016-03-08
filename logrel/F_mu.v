@@ -913,6 +913,20 @@ Section typed_interp.
       rewrite H21; congruence.
     Qed.
     
+        Instance Vlist_head_ne {m n} : Proper (dist n ==> dist n) (@Vlist_head A m).
+    Proof.
+      intros [v Hv] [v' Hv'] H.
+      destruct v; destruct v'; try (try inversion Hv; try inversion Hv'; fail).
+      inversion H; trivial.
+    Qed.
+    
+    Instance Vlist_head_proper {m} : Proper ((≡) ==> (≡)) (@Vlist_head A m).
+    Proof.
+      intros [v Hv] [v' Hv'] H.
+      destruct v; destruct v'; try (try inversion Hv; try inversion Hv'; fail).
+      inversion H; trivial.
+    Qed.
+    
     Instance Vlist_tail_ne {m n} : Proper (dist n ==> dist n) (@Vlist_tail A m).
     Proof.
       intros [v Hv] [v' Hv'] H.
@@ -946,7 +960,7 @@ Section typed_interp.
     Next Obligation.
     Proof.
       intros n c m i H; cbn.
-      apply force_lookup_ne, chain_cauchy; trivial.
+      apply Vlist_head_ne, chain_cauchy; trivial.
     Qed.
 
     Definition Vlist_chain {n : nat} `(c : chain (Vlist A n)) : Vlist (chain A) n :=
