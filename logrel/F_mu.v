@@ -779,7 +779,68 @@ Section typed_interp.
     intros A n m [l Hl] [l' Hl']; cbn.
     rewrite app_length; rewrite Hl Hl'; trivial.
   Qed.
-    
+
+  Lemma force_lookup_l
+        {A : Type} {m n : nat} (v : Vlist A m) (v' : Vlist A n)
+        (i : nat) (Hlt :  i < m + n) (Hlt' : i < m)
+    : force_lookup (Vlist_app v v') i Hlt = force_lookup v i Hlt'.
+  Proof.
+    destruct v as [l Hl]; destruct v' as [l' Hl']; unfold force_lookup; cbn in *.
+    match goal with
+      [|- match ?A with |Some _ => _ |None => _ end ?B =
+         match ?C with |Some _ => _ |None => _ end ?D] =>
+      generalize B; generalize D; cbn
+    end.
+    rewrite lookup_app_l; auto with omega.
+    intros HB HC.
+    match goal with
+      [|- match ?A with |Some _ => _ |None => _ end ?B =
+         match ?A with |Some _ => _ |None => _ end ?D] =>
+      destruct A; trivial; inversion HB; congruence
+    end.
+  Qed.
+
+  Lemma force_lookup_r
+        {A : Type} {m n : nat} (v : Vlist A m) (v' : Vlist A n)
+        (i : nat) (Hlt :  i < m + n) (Hge : i ≥ m) (Hlt' : (i - m) < n)
+    : force_lookup (Vlist_app v v') i Hlt = force_lookup v' (i - m) Hlt'.
+  Proof.
+    destruct v as [l Hl]; destruct v' as [l' Hl']; unfold force_lookup; cbn in *.
+    match goal with
+      [|- match ?A with |Some _ => _ |None => _ end ?B =
+         match ?C with |Some _ => _ |None => _ end ?D] =>
+      generalize B; generalize D; cbn
+    end.
+    rewrite lookup_app_r; auto with omega.
+    rewrite Hl.
+    intros HB HC.
+    match goal with
+      [|- match ?A with |Some _ => _ |None => _ end ?B =
+         match ?A with |Some _ => _ |None => _ end ?D] =>
+      destruct A; trivial; inversion HB; congruence
+    end.
+  Qed.
+
+  Lemma force_lookup_Vlist_cons
+        {A : Type} {n : nat} (x : A) (v : Vlist A n)
+        (i : nat) (Hlt :  S i < (S n)) (Hlt' : i < n)
+    : force_lookup (Vlist_cons x v) (S i) Hlt = force_lookup v i Hlt'.
+  Proof.
+    destruct v as [l Hl]; unfold force_lookup; cbn in *.
+    match goal with
+      [|- match ?A with |Some _ => _ |None => _ end ?B =
+         match ?C with |Some _ => _ |None => _ end ?D] =>
+      generalize B; generalize D; cbn
+    end.
+    intros HB HC.
+    match goal with
+      [|- match ?A with |Some _ => _ |None => _ end ?B =
+         match ?C with |Some _ => _ |None => _ end ?D] =>
+      change C with A in *; destruct A;
+      trivial; inversion HB; congruence
+    end.
+  Qed.
+        
   Program Definition Vlist_tail {A n} (v : Vlist A (S n)) : Vlist A n :=
     match `v as u return length u = (S n) → Vlist A n with
     | nil => _
@@ -837,15 +898,15 @@ Section typed_interp.
       rewrite H21; congruence.
     Qed.
     
-    Lemma force_lookup_proper {m v v' i H} :
-      v ≡ v' → (@force_lookup _ m v i H) ≡ (force_lookup v' i H).
+    Lemma force_lookup_proper {m v v' i H H'} :
+      v ≡ v' → (@force_lookup _ m v i H) ≡ (force_lookup v' i H').
     Proof.
       intros H1; unfold dist in H1; unfold Vlist_dist in *.
       destruct v as [l Hv]; destruct v' as [l' Hv']; unfold force_lookup;
       try (try inversion Hv; try inversion Hv'; fail); subst; cbn in *.
       set (H2 := λ x, @Forall2_lookup_l _ _ _ _ _ i x H1); clearbody H2.
       generalize (force_lookup_obligation_1 A (length l) (l ↾ Logic.eq_refl) i H) as H4.
-      generalize (force_lookup_obligation_1 A (length l) (l' ↾ Hv') i H) as H3.
+      generalize (force_lookup_obligation_1 A (length l) (l' ↾ Hv') i H') as H3.
       intros [y1 H3] [y2 H4]; cbn in *. destruct (l !! i); [| congruence]. 
       edestruct H2 as [z [H21 H22]]; eauto.
       generalize (ex_intro (λ y : A, l' !! i = Some y) y1 H3) as H5.
@@ -946,7 +1007,7 @@ Section typed_interp.
     rewrite app_comm_cons. apply Reflexive_instance_0; auto.
   Qed.
 
-  Theorem Vlist_nill_app {A : cofeT} {n} (v : Vlist A n) :
+  Theorem Vlist_nil_app {A : cofeT} {n} (v : Vlist A n) :
     (Vlist_app Vlist_nil v) ≡ v.
   Proof.
     destruct v as [l Hl].
@@ -1386,8 +1447,17 @@ Section typed_interp.
     - asimpl in *.          
       revert HC'; rewrite iter_up; intros HC'.
       destruct lt_dec; asimpl; unfold ids, Ids_type; cbn.
-      + admit.
-      + admit.
+      + rewrite !force_lookup_l; trivial.
+      + inversion HC'; subst.
+        rewrite force_lookup_r; try lia; intros Hlt.
+        rewrite force_lookup_r; try lia; intros Hlt'.
+        rewrite force_lookup_r; try lia; intros Hlt''.
+        revert Hlt''.
+        match goal with
+          [|- ∀ _, _ (force_lookup _ ?A _) _ ≡ _ (force_lookup _ ?B _) _] =>
+          replace B with A by lia; intros Hlt''
+        end.
+        rewrite force_lookup_proper; eauto.
     - apply exist_proper =>w1; apply and_proper; auto.
       apply forall_proper; intros [f Hf].
       apply always_proper, later_proper, wp_proper => w2.
@@ -1397,7 +1467,7 @@ Section typed_interp.
       change (up (iter m up (ren (+n)))) with (iter (S m) up (ren (+n))).
       rewrite !Vlist_app_cons.
       apply IHτ.
-  Admitted.
+  Qed.
 
   Lemma interp_ren_S (k : nat) (τ : type)
         (Δ : Vlist (leibniz_val -n> iProp lang Σ) k)
@@ -1406,9 +1476,9 @@ Section typed_interp.
         (v : leibniz_val)
     : interp k τ HC Δ v ≡ interp (S k) τ.[ren (+1)] HC' (Vlist_cons τi Δ) v.
   Proof.
-    rewrite -(Vlist_nill_app Δ).
+    rewrite -(Vlist_nil_app Δ).
     rewrite (Vlist_app_cons τi Vlist_nil Δ).
-    rewrite -(Vlist_nill_app (Vlist_app (Vlist_cons τi Vlist_nil) Δ)).
+    rewrite -(Vlist_nil_app (Vlist_app (Vlist_cons τi Vlist_nil) Δ)).
     apply (interp_subst_weaken k 0 1).
   Qed.
 
@@ -1443,14 +1513,27 @@ Section typed_interp.
     - asimpl in *.
       revert HC''; rewrite iter_up; intros HC''.
       destruct lt_dec.
-      + admit.
+      + unfold ids, Ids_type; cbn.
+        rewrite !force_lookup_l; trivial.
       + remember (x - m) as u.
-        destruct u; asimpl.
-        * destruct (nat_eq_dec x m); try omega.
-          subst.
-          admit.
-        * assert (x > m) by omega.
-          admit.
+        destruct (nat_eq_dec x m); try lia.
+        * revert HC''; replace u with 0 by lia; asimpl; intros HC''.
+          rewrite force_lookup_r; try lia; rewrite -Hequ; intros HC3.
+          destruct u; try lia; cbn.
+          rewrite -(Vlist_nil_app (Vlist_app Ξ Δ)).
+          rewrite -(interp_subst_weaken _ 0 m).
+          rewrite Vlist_nil_app; trivial.
+        * destruct u; try lia; destruct x; try lia.
+          revert HC''; asimpl; intros HC''; inversion HC''.
+          unfold ids, Ids_type; cbn.
+          rewrite !force_lookup_r; try lia; rewrite -Hequ; intros HC3 HC4.
+          rewrite force_lookup_Vlist_cons; try lia; intros HC5.
+          revert HC3.
+          match goal with
+            [|- ∀ _, _ (force_lookup _ ?A _) _ ≡ _ (force_lookup _ ?B _) _] =>
+            replace B with A by lia; intros HC3
+          end.
+          rewrite force_lookup_proper; eauto.
     - apply exist_proper =>w1; apply and_proper; auto.
       apply forall_proper; intros [f Hf].
       apply always_proper, later_proper, wp_proper => w2.
@@ -1460,7 +1543,7 @@ Section typed_interp.
       change (up (iter m up (τ' .: ids))) with (iter (S m) up (τ' .: ids)).
       rewrite !Vlist_app_cons.
       apply IHτ.
-  Admitted.
+  Qed.
 
   Lemma interp_subst
     (k : nat)
@@ -1472,8 +1555,8 @@ Section typed_interp.
     : interp (S k) τ HC (Vlist_cons (interp k τ' HC' Δ) Δ)
              ≡ interp k τ.[τ'/] HC'' Δ.
   Proof.
-    rewrite <- (Vlist_nill_app Δ) at 3.
-    rewrite <- (Vlist_nill_app (Vlist_cons ((interp k τ' HC') Δ) Δ)).
+    rewrite <- (Vlist_nil_app Δ) at 3.
+    rewrite <- (Vlist_nil_app (Vlist_cons ((interp k τ' HC') Δ) Δ)).
     apply (interp_subst_iter_up k 0 Δ Vlist_nil τ τ' HC' HC HC'').
   Qed.
 
