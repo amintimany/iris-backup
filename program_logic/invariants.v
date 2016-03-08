@@ -64,11 +64,14 @@ Proof. intros. by apply: (inv_fsa pvs_fsa). Qed.
 Lemma wp_open_close E e N P Φ R :
   atomic e → nclose N ⊆ E →
   R ⊑ inv N P →
-  R ⊑ (▷ P -★ || e @ E ∖ nclose N {{ λ v, ▷ P ★ Φ v }}) →
-  R ⊑ || e @ E {{ Φ }}.
+  R ⊑ (▷ P -★ #> e @ E ∖ nclose N {{ λ v, ▷ P ★ Φ v }}) →
+  R ⊑ #> e @ E {{ Φ }}.
 Proof. intros. by apply: (inv_fsa (wp_fsa e)). Qed.
 
-Lemma inv_alloc N P : ▷ P ⊑ pvs N N (inv N P).
-Proof. by rewrite /inv (pvs_allocI N); last apply coPset_suffixes_infinite. Qed.
+Lemma inv_alloc N E P : nclose N ⊆ E → ▷ P ⊑ pvs E E (inv N P).
+Proof. 
+  intros. rewrite -(pvs_mask_weaken N) //.
+  by rewrite /inv (pvs_allocI N); last apply coPset_suffixes_infinite.
+Qed.
 
 End inv.

@@ -1,5 +1,6 @@
 From algebra Require Export excl.
-From algebra Require Import functor upred.
+From algebra Require Import upred.
+Local Arguments valid _ _ !_ /.
 Local Arguments validN _ _ _ !_ /.
 
 Record auth (A : Type) : Type := Auth { authoritative : excl A ; own : A }.
@@ -13,7 +14,8 @@ Notation "● a" := (Auth (Excl a) ∅) (at level 20).
 (* COFE *)
 Section cofe.
 Context {A : cofeT}.
-Implicit Types a b : A.
+Implicit Types a : excl A.
+Implicit Types b : A.
 Implicit Types x y : auth A.
 
 Instance auth_equiv : Equiv (auth A) := λ x y,
@@ -50,9 +52,12 @@ Proof.
     apply (conv_compl n (chain_map own c)).
 Qed.
 Canonical Structure authC := CofeT auth_cofe_mixin.
-Global Instance auth_timeless (x : auth A) :
-  Timeless (authoritative x) → Timeless (own x) → Timeless x.
-Proof. by intros ?? [??] [??]; split; simpl in *; apply (timeless _). Qed.
+
+Global Instance Auth_timeless a b :
+  Timeless a → Timeless b → Timeless (Auth a b).
+Proof. by intros ?? [??] [??]; split; apply: timeless. Qed.
+Global Instance auth_discrete : Discrete A → Discrete authC.
+Proof. intros ? [??]; apply _. Qed.
 Global Instance auth_leibniz : LeibnizEquiv A → LeibnizEquiv (auth A).
 Proof. by intros ? [??] [??] [??]; f_equal/=; apply leibniz_equiv. Qed.
 End cofe.
@@ -66,6 +71,13 @@ Implicit Types a b : A.
 Implicit Types x y : auth A.
 
 Global Instance auth_empty `{Empty A} : Empty (auth A) := Auth ∅ ∅.
+Instance auth_valid : Valid (auth A) := λ x,
+  match authoritative x with
+  | Excl a => own x ≼ a ∧ ✓ a
+  | ExclUnit => ✓ own x
+  | ExclBot => False
+  end.
+Global Arguments auth_valid !_ /.
 Instance auth_validN : ValidN (auth A) := λ n x,
   match authoritative x with
   | Excl a => own x ≼{n} a ∧ ✓{n} a
@@ -73,20 +85,15 @@ Instance auth_validN : ValidN (auth A) := λ n x,
   | ExclBot => False
   end.
 Global Arguments auth_validN _ !_ /.
-Instance auth_unit : Unit (auth A) := λ x,
-  Auth (unit (authoritative x)) (unit (own x)).
+Instance auth_core : Core (auth A) := λ x,
+  Auth (core (authoritative x)) (core (own x)).
 Instance auth_op : Op (auth A) := λ x y,
   Auth (authoritative x ⋅ authoritative y) (own x ⋅ own y).
-Instance auth_minus : Minus (auth A) := λ x y,
-  Auth (authoritative x ⩪ authoritative y) (own x ⩪ own y).
+Instance auth_div : Div (auth A) := λ x y,
+  Auth (authoritative x ÷ authoritative y) (own x ÷ own y).
+
 Lemma auth_included (x y : auth A) :
   x ≼ y ↔ authoritative x ≼ authoritative y ∧ own x ≼ own y.
-Proof.
-  split; [intros [[z1 z2] Hz]; split; [exists z1|exists z2]; apply Hz|].
-  intros [[z1 Hz1] [z2 Hz2]]; exists (Auth z1 z2); split; auto.
-Qed.
-Lemma auth_includedN n (x y : auth A) :
-  x ≼{n} y ↔ authoritative x ≼{n} authoritative y ∧ own x ≼{n} own y.
 Proof.
   split; [intros [[z1 z2] Hz]; split; [exists z1|exists z2]; apply Hz|].
   intros [[z1 Hz1] [z2 Hz2]]; exists (Auth z1 z2); split; auto.
@@ -105,52 +112,56 @@ Proof.
       destruct Hx; intros ?; cofe_subst; auto.
   - by intros n x1 x2 [Hx Hx'] y1 y2 [Hy Hy'];
       split; simpl; rewrite ?Hy ?Hy' ?Hx ?Hx'.
+  - intros [[] ?]; rewrite /= ?cmra_included_includedN ?cmra_valid_validN;
+      naive_solver eauto using O.
   - intros n [[] ?] ?; naive_solver eauto using cmra_includedN_S, cmra_validN_S.
   - by split; simpl; rewrite assoc.
   - by split; simpl; rewrite comm.
-  - by split; simpl; rewrite ?cmra_unit_l.
-  - by split; simpl; rewrite ?cmra_unit_idemp.
-  - intros n ??; rewrite! auth_includedN; intros [??].
-    by split; simpl; apply cmra_unit_preservingN.
+  - by split; simpl; rewrite ?cmra_core_l.
+  - by split; simpl; rewrite ?cmra_core_idemp.
+  - intros ??; rewrite! auth_included; intros [??].
+    by split; simpl; apply cmra_core_preserving.
   - assert (∀ n (a b1 b2 : A), b1 ⋅ b2 ≼{n} a → b1 ≼{n} a).
     { intros n a b1 b2 <-; apply cmra_includedN_l. }
    intros n [[a1| |] b1] [[a2| |] b2];
      naive_solver eauto using cmra_validN_op_l, cmra_validN_includedN.
-  - by intros n ??; rewrite auth_includedN;
-      intros [??]; split; simpl; apply cmra_op_minus.
+  - by intros ??; rewrite auth_included;
+      intros [??]; split; simpl; apply cmra_op_div.
+  - intros n x y1 y2 ? [??]; simpl in *.
+    destruct (cmra_extend n (authoritative x) (authoritative y1)
+      (authoritative y2)) as (ea&?&?&?); auto using authoritative_validN.
+    destruct (cmra_extend n (own x) (own y1) (own y2))
+      as (b&?&?&?); auto using own_validN.
+    by exists (Auth (ea.1) (b.1), Auth (ea.2) (b.2)).
 Qed.
-Definition auth_cmra_extend_mixin : CMRAExtendMixin (auth A).
+Canonical Structure authR : cmraT := CMRAT auth_cofe_mixin auth_cmra_mixin.
+Global Instance auth_cmra_discrete : CMRADiscrete A → CMRADiscrete authR.
 Proof.
-  intros n x y1 y2 ? [??]; simpl in *.
-  destruct (cmra_extend_op n (authoritative x) (authoritative y1)
-    (authoritative y2)) as (ea&?&?&?); auto using authoritative_validN.
-  destruct (cmra_extend_op n (own x) (own y1) (own y2))
-    as (b&?&?&?); auto using own_validN.
-  by exists (Auth (ea.1) (b.1), Auth (ea.2) (b.2)).
+  split; first apply _.
+  intros [[] ?]; by rewrite /= /cmra_valid /cmra_validN /=
+    -?cmra_discrete_included_iff -?cmra_discrete_valid_iff.
 Qed.
-Canonical Structure authRA : cmraT :=
-  CMRAT auth_cofe_mixin auth_cmra_mixin auth_cmra_extend_mixin.
 
 (** Internalized properties *)
 Lemma auth_equivI {M} (x y : auth A) :
   (x ≡ y)%I ≡ (authoritative x ≡ authoritative y ∧ own x ≡ own y : uPred M)%I.
-Proof. done. Qed.
+Proof. by uPred.unseal. Qed.
 Lemma auth_validI {M} (x : auth A) :
   (✓ x)%I ≡ (match authoritative x with
              | Excl a => (∃ b, a ≡ own x ⋅ b) ∧ ✓ a
              | ExclUnit => ✓ own x
              | ExclBot => False
              end : uPred M)%I.
-Proof. by destruct x as [[]]. Qed.
+Proof. uPred.unseal. by destruct x as [[]]. Qed.
 
 (** The notations ◯ and ● only work for CMRAs with an empty element. So, in
 what follows, we assume we have an empty element. *)
-Context `{Empty A, !CMRAIdentity A}.
+Context `{Empty A, !CMRAUnit A}.
 
-Global Instance auth_cmra_identity : CMRAIdentity authRA.
+Global Instance auth_cmra_unit : CMRAUnit authR.
 Proof.
   split; simpl.
-  - by apply (@cmra_empty_valid A _).
+  - by apply (@cmra_unit_valid A _).
   - by intros x; constructor; rewrite /= left_id.
   - apply _.
 Qed.
@@ -173,7 +184,7 @@ Lemma auth_local_update L `{!LocalUpdate Lv L} a a' :
   Lv a → ✓ L a' →
   ● a' ⋅ ◯ a ~~> ● L a' ⋅ ◯ L a.
 Proof.
-  intros. apply auth_update=>n af ? EQ; split; last done.
+  intros. apply auth_update=>n af ? EQ; split; last by apply cmra_valid_validN.
   by rewrite EQ (local_updateN L) // -EQ.
 Qed.
 
@@ -192,13 +203,12 @@ Lemma auth_local_update_l L `{!LocalUpdate Lv L} a a' :
   Lv a → ✓ (L a ⋅ a') →
   ● (a ⋅ a') ⋅ ◯ a ~~> ● (L a ⋅ a') ⋅ ◯ L a.
 Proof.
-  intros. apply auth_update=>n af ? EQ; split; last done.
+  intros. apply auth_update=>n af ? EQ; split; last by apply cmra_valid_validN.
   by rewrite -(local_updateN L) // EQ -(local_updateN L) // -EQ.
 Qed.
-
 End cmra.
 
-Arguments authRA : clear implicits.
+Arguments authR : clear implicits.
 
 (* Functor *)
 Definition auth_map {A B} (f : A → B) (x : auth A) : auth B :=
@@ -217,31 +227,37 @@ Proof.
   intros f g Hf [??] [??] [??]; split; [by apply excl_map_cmra_ne|by apply Hf].
 Qed.
 Instance auth_map_cmra_monotone {A B : cmraT} (f : A → B) :
-  (∀ n, Proper (dist n ==> dist n) f) →
   CMRAMonotone f → CMRAMonotone (auth_map f).
 Proof.
-  split.
-  - by intros n [x a] [y b]; rewrite !auth_includedN /=;
-      intros [??]; split; simpl; apply: includedN_preserving.
-  - intros n [[a| |] b]; rewrite /= /cmra_validN;
-      naive_solver eauto using @includedN_preserving, @validN_preserving.
+  split; try apply _.
+  - intros n [[a| |] b]; rewrite /= /cmra_validN /=; try
+      naive_solver eauto using includedN_preserving, validN_preserving.
+  - by intros [x a] [y b]; rewrite !auth_included /=;
+      intros [??]; split; simpl; apply: included_preserving.
 Qed.
 Definition authC_map {A B} (f : A -n> B) : authC A -n> authC B :=
   CofeMor (auth_map f).
 Lemma authC_map_ne A B n : Proper (dist n ==> dist n) (@authC_map A B).
 Proof. intros f f' Hf [[a| |] b]; repeat constructor; apply Hf. Qed.
 
-Program Definition authF (Σ : iFunctor) : iFunctor := {|
-  ifunctor_car := authRA ∘ Σ; ifunctor_map A B := authC_map ∘ ifunctor_map Σ
+Program Definition authRF (F : rFunctor) : rFunctor := {|
+  rFunctor_car A B := authR (rFunctor_car F A B);
+  rFunctor_map A1 A2 B1 B2 fg := authC_map (rFunctor_map F fg)
 |}.
 Next Obligation.
-  by intros Σ A B n f g Hfg; apply authC_map_ne, ifunctor_map_ne.
+  by intros F A1 A2 B1 B2 n f g Hfg; apply authC_map_ne, rFunctor_ne.
 Qed.
 Next Obligation.
-  intros Σ A x. rewrite /= -{2}(auth_map_id x).
-  apply auth_map_ext=>y; apply ifunctor_map_id.
+  intros F A B x. rewrite /= -{2}(auth_map_id x).
+  apply auth_map_ext=>y; apply rFunctor_id.
 Qed.
 Next Obligation.
-  intros Σ A B C f g x. rewrite /= -auth_map_compose.
-  apply auth_map_ext=>y; apply ifunctor_map_compose.
+  intros F A1 A2 A3 B1 B2 B3 f g f' g' x. rewrite /= -auth_map_compose.
+  apply auth_map_ext=>y; apply rFunctor_compose.
+Qed.
+
+Instance authRF_contractive F :
+  rFunctorContractive F → rFunctorContractive (authRF F).
+Proof.
+  by intros ? A1 A2 B1 B2 n f g Hfg; apply authC_map_ne, rFunctor_contractive.
 Qed.

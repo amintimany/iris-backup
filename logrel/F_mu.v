@@ -791,7 +791,7 @@ Section typed_interp.
 
   Definition interp_arrow (τ1i τ2i : leibniz_val -n> iProp lang Σ) : leibniz_val -n> iProp lang Σ :=
     {|
-      cofe_mor_car := λ w, (□ ∀ v, ▷ τ1i v → || (App (# w) (# v)) @ ⊤ {{τ2i}})%I
+      cofe_mor_car := λ w, (□ ∀ v, ▷ τ1i v → #> (App (# w) (# v)) @ ⊤ {{τ2i}})%I
     |}.
 
   Instance interp_arrow_proper : Proper ((≡) ==> (≡) ==> (≡)) interp_arrow.
@@ -821,7 +821,7 @@ Section typed_interp.
         λ w,
         (∃ e, w = TLamV e ∧
         ∀ (τ'i : {f : (leibniz_val -n> iProp lang Σ) | Val_to_IProp_AlwaysStable f}),
-            □ (▷ || e @ ⊤ {{λ v, (τi (`τ'i) v)}}))%I
+            □ (▷ #> e @ ⊤ {{λ v, (τi (`τ'i) v)}}))%I
     |}.
 
   Instance interp_forall_proper : Proper ((≡) ==> (≡)) interp_forall.
@@ -848,7 +848,7 @@ Section typed_interp.
              (rec_apr : (leibniz_val -n> iProp lang Σ))
     : (leibniz_val -n> iProp lang Σ) :=
     {|
-      cofe_mor_car := λ w, (□ (∃ e, w = FoldV e ∧ ▷ || e @ ⊤ {{ λ v, τi rec_apr v}}))%I
+      cofe_mor_car := λ w, (□ (∃ e, w = FoldV e ∧ ▷ #> e @ ⊤ {{ λ v, τi rec_apr v}}))%I
     |}.
 
   Instance interp_rec_pre_proper : Proper ((≡) ==> (≡) ==> (≡)) interp_rec_pre.
@@ -1071,7 +1071,7 @@ Section typed_interp.
   Local Hint Extern 3 (_ ⊑ (_ ∨ _))%I => rewrite -or_intro_r : itauto.
   Local Hint Extern 2 (_ ⊑ ▷ _)%I => etransitivity; [|rewrite -later_intro] : itauto.
   
-  Local Ltac value_case := rewrite -wp_value/= ?to_of_val //.
+  Local Ltac value_case := rewrite -wp_value/= ?to_of_val //; auto 2.
 
 
   Lemma interp_subst_weaken
@@ -1248,7 +1248,7 @@ Section typed_interp.
         (HΔ : VlistAlwaysStable Δ)
     : length Γ = length vs →
       Π∧ zip_with (λ τ v, interp k (` τ) (proj2_sig τ) Δ v) (closed_ctx_list _ Γ Hctx) vs ⊑
-                  || (e.[env_subst vs]) @ ⊤ {{ λ v, interp k τ HC Δ v }}.
+                  #> (e.[env_subst vs]) @ ⊤ {{ λ v, interp k τ HC Δ v }}.
   Proof.
     revert Hctx HC HΔ vs.
     induction Htyped; intros Hctx HC HΔ vs Hlen; cbn.
@@ -1390,11 +1390,11 @@ Section typed_interp.
                                 (λ w : leibniz_val,
                                        □ (∃ e1 : expr,
                                              w = FoldV e1
-                                             ∧ ▷ || e1 @ ⊤ {{ λ v1 : val,
+                                             ∧ ▷ #> e1 @ ⊤ {{ λ v1 : val,
                                                         ((interp (S k) τ (closed_type_rec ?HC4))
                                                            (Vlist_cons rec_apr Δ)) v1 }}))%I))
       with
-      (interp k (TRec τ) (typed_closed_type _ _ _ _ Htyped) Δ) by trivial.
+      (interp k (TRec τ) (typed_closed_type _ _ _ _ Htyped) Δ) by (cbn; unfold interp_rec; trivial).
       rewrite always_elim.
       rewrite exist_elim; eauto => e'.
       apply const_elim_l; intros H'; rewrite H'.

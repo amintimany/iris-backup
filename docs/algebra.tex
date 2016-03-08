@@ -1,5 +1,155 @@
 \section{Algebraic Structures}
 
+\subsection{COFE}
+
+\begin{defn}[Chain]
+  Given some set $T$ and an indexed family $({\nequiv{n}} \subseteq T \times T)_{n \in \mathbb{N}}$ of equivalence relations, a \emph{chain} is a function $c : \mathbb{N} \to T$ such that $\All n, m. n \leq m \Ra c (m) \nequiv{n} c (n)$.
+\end{defn}
+
+\begin{defn}
+  A \emph{complete ordered family of equivalences} (COFE) is a tuple $(T, ({\nequiv{n}} \subseteq T \times T)_{n \in \mathbb{N}}, \lim : \chain(T) \to T)$ satisfying
+  \begin{align*}
+    \All n. (\nequiv{n}) ~& \text{is an equivalence relation} \tagH{cofe-equiv} \\
+    \All n, m.& n \geq m \Ra (\nequiv{n}) \subseteq (\nequiv{m}) \tagH{cofe-mono} \\
+    \All x, y.& x = y \Lra (\All n. x \nequiv{n} y) \tagH{cofe-limit} \\
+    \All n, c.& \lim(c) \nequiv{n} c(n+1) \tagH{cofe-compl}
+  \end{align*}
+\end{defn}
+
+\ralf{Copy the explanation from the paper, when that one is more polished.}
+
+\begin{defn}
+  An element $x \in A$ of a COFE is called \emph{discrete} if
+  \[ \All y \in A. x \nequiv{0} y \Ra x = y\]
+  A COFE $A$ is called \emph{discrete} if all its elements are discrete.
+\end{defn}
+
+\begin{defn}
+  A function $f : A \to B$ between two COFEs is \emph{non-expansive} if
+  \[\All n, x \in A, y \in A. x \nequiv{n} y \Ra f(x) \nequiv{n} f(y) \]
+  It is \emph{contractive} if
+  \[ \All n, x \in A, y \in A. (\All m < n. x \nequiv{m} y) \Ra f(x) \nequiv{n} f(x) \]
+\end{defn}
+
+\begin{defn}
+  The category $\COFEs$ consists of COFEs as objects, and non-expansive functions as arrows.
+\end{defn}
+Note that $\COFEs$ is cartesian closed.
+
+\begin{defn}
+  A functor $F : \COFEs \to COFEs$ is called \emph{locally non-expansive} if its actions $F_1$ on arrows is itself a non-expansive map.
+  Similarly, $F$ is called \emph{locally contractive} if $F_1$ is a contractive map.
+\end{defn}
+
+\subsection{RA}
+
+\ralf{Define this, including frame-preserving updates.}
+
+\subsection{CMRA}
+
+\begin{defn}
+  A \emph{CMRA} is a tuple $(\monoid, (\mval_n \subseteq \monoid)_{n \in \mathbb{N}}, \mcore{-}: \monoid \to \monoid, (\mtimes) : \monoid \times \monoid \to \monoid, (\mdiv) : \monoid \times \monoid \to \monoid)$ satisfying
+  \begin{align*}
+    \All n, m.& n \geq m \Ra V_n \subseteq V_m \tagH{cmra-valid-mono} \\
+    \All \melt, \meltB, \meltC.& (\melt \mtimes \meltB) \mtimes \meltC = \melt \mtimes (\meltB \mtimes \meltC) \tagH{cmra-assoc} \\
+    \All \melt, \meltB.& \melt \mtimes \meltB = \meltB \mtimes \melt \tagH{cmra-comm} \\
+    \All \melt.& \mcore\melt \mtimes \melt = \melt \tagH{cmra-core-id} \\
+    \All \melt.& \mcore{\mcore\melt} = \mcore\melt \tagH{cmra-core-idem} \\
+    \All \melt, \meltB.& \melt \leq \meltB \Ra \mcore\melt \leq \mcore\meltB \tagH{cmra-core-mono} \\
+    \All n, \melt, \meltB.& (\melt \mtimes \meltB) \in \mval_n \Ra \melt \in \mval_n \tagH{cmra-valid-op} \\
+    \All \melt, \meltB.& \melt \leq \meltB \Ra \melt \mtimes (\meltB \mdiv \melt) = \meltB \tagH{cmra-div-op} \\
+    \All n, \melt, \meltB_1, \meltB_2.& \omit\rlap{$\melt \in \mval_n \land \melt \nequiv{n} \meltB_1 \mtimes \meltB_2 \Ra {}$} \\
+    &\Exists \meltC_1, \meltC_2. \melt = \meltC_1 \mtimes \meltC_2 \land \meltC_1 \nequiv{n} \meltB_1 \land \meltC_2 \nequiv{n} \meltB_2 \tagH{cmra-extend} \\
+    \text{where}\qquad\qquad\\
+    \melt \leq \meltB \eqdef{}& \Exists \meltC. \meltB = \melt \mtimes \meltC \tagH{cmra-incl}
+  \end{align*}
+\end{defn}
+
+Note that every RA is a CMRA, by picking the discrete COFE for the equivalence relation.
+
+\ralf{Copy the rest of the explanation from the paper, when that one is more polished.}
+
+\paragraph{The division operator $\mdiv$.}
+One way to describe $\mdiv$ is to say that it extracts the witness from the extension order: If $\melt \leq \meltB$, then $\melt \mdiv \meltB$ computes the difference between the two elements (\ruleref{cmra-div-op}).
+Otherwise, $\mdiv$ can have arbitrary behavior.
+This means that, in classical logic, the division operator can be defined for any PCM using the axiom of choice, and it will trivially satisfy \ruleref{cmra-div-op}.
+However, notice that the division operator also has to be \emph{non-expansive} --- so if the carrier $\monoid$ is equipped with a non-trivial $\nequiv{n}$, there is an additional proof obligation here.
+This is crucial, for the following reason:
+Considering that the extension order is defined using \emph{equality}, there is a natural notion of a \emph{step-indexed extension} order using the step-indexed equivalence of the underlying COFE:
+\[ \melt \mincl{n} \meltB \eqdef \Exists \meltC. \meltB \nequiv{n} \melt \mtimes \meltC \tagH{cmra-inclM} \]
+One of the properties we would expect to hold is the usual correspondence between a step-indexed predicate and its non-step-indexed counterpart:
+\[ \All \melt, \meltB. \melt \leq \meltB \Lra (\All n. \melt \mincl{n} \meltB) \tagH{cmra-incl-limit} \]
+The right-to-left direction here is trick.
+For every $n$, we obtain a proof that $\melt \mincl{n} \meltB$.
+From this, we could extract a sequence of witnesses $(\meltC_m)_{m}$, and we need to arrive at a single witness $\meltC$ showing that $\melt \leq \meltB$.
+Without the division operator, there is no reason to believe that such a witness exists.
+However, since we can use the division operator, and since we know that this operator is \emph{non-expansive}, we can pick $\meltC \eqdef \meltB \mdiv \melt$, and then we can prove that this is indeed the desired witness.
+\ralf{Do we actually need this property anywhere?}
+
+\paragraph{The extension axiom (\ruleref{cmra-extend}).}
+Notice that the existential quantification in this axiom is \emph{constructive}, \ie it is a sigma type in Coq.
+The purpose of this axiom is to compute $\melt_1$, $\melt_2$ completing the following square:
+
+\ralf{Needs some magic to fix the baseline of the $\nequiv{n}$, or so}
+\begin{center}
+\begin{tikzpicture}[every edge/.style={draw=none}]
+  \node (a) at (0, 0) {$\melt$};
+  \node (b) at (1.7, 0) {$\meltB$};
+  \node (b12) at (1.7, -1) {$\meltB_1 \mtimes \meltB_2$};
+  \node (a12) at (0, -1) {$\melt_1 \mtimes \melt_2$};
+
+  \path (a) edge node {$\nequiv{n}$} (b);
+  \path (a12) edge node {$\nequiv{n}$} (b12);
+  \path (a) edge node [rotate=90] {$=$} (a12);
+  \path (b) edge node [rotate=90] {$=$} (b12);
+\end{tikzpicture}\end{center}
+where the $n$-equivalence at the bottom is meant to apply to the pairs of elements, \ie we demand $\melt_1 \nequiv{n} \meltB_1$ and $\melt_2 \nequiv{n} \meltB_2$.
+In other words, extension carries the decomposition of $\meltB$ into $\meltB_1$ and $\meltB_2$ over the $n$-equivalence of $\melt$ and $\meltB$, and yields a corresponding decomposition of $\melt$ into $\melt_1$ and $\melt_2$.
+This operation is needed to prove that $\later$ commutes with existential quantification and separating conjunction:
+\begin{mathpar}
+  \axiom{\later(\Exists\var:\type. \prop) \Lra \Exists\var:\type. \later\prop}
+  \and\axiom{\later (\prop * \propB) \Lra \later\prop * \later\propB}
+\end{mathpar}
+(This assumes that the type $\type$ is non-empty.)
+
+\begin{defn}
+  An element $\munit$ of a CMRA $\monoid$ is called the \emph{unit} of $\monoid$ if it satisfies the following conditions:
+  \begin{enumerate}[itemsep=0pt]
+  \item $\munit$ is valid: \\ $\All n, \munit \in \mval_n$
+  \item $\munit$ is left-identity of the operation: \\
+    $\All \melt \in M. \munit \mtimes \melt = \melt$
+  \item $\munit$ is discrete
+  \end{enumerate}
+\end{defn}
+
+\begin{defn}
+  It is possible to do a \emph{frame-preserving update} from $\melt \in \monoid$ to $\meltsB \subseteq \monoid$, written $\melt \mupd \meltsB$, if
+  \[ \All n, \melt_f. \melt \mtimes \melt_f \in \mval_n \Ra \Exists \meltB \in \meltsB. \meltB \mtimes \melt_f \in \mval_n \]
+
+  We further define $\melt \mupd \meltB \eqdef \melt \mupd \set\meltB$.
+\end{defn}
+Note that for RAs, this and the RA-based definition of a frame-preserving update coincide.
+
+\ralf{Describe discrete CMRAs, and how they correspond to RAs.}
+
+\begin{defn}
+  A function $f : M \to N$ between two CMRAs is \emph{monotone} if it satisfies the following conditions:
+  \begin{enumerate}[itemsep=0pt]
+  \item $f$ is non-expansive
+  \item $f$ preserves validity: \\
+    $\All n, x \in M. x \in \mval_n \Ra f(x) \in \mval_n$
+  \item $f$ preserves CMRA inclusion:\\
+    $\All x, y. x \mincl y \Ra f(x) \mincl f(y)$
+  \end{enumerate}
+\end{defn}
+
+\begin{defn}
+  The category $\CMRAs$ consists of CMRAs as objects, and monotone functions as arrows.
+\end{defn}
+Note that $\CMRAs$ is a subcategory of $\COFEs$.
+The notion of a locally non-expansive (or contractive) functor naturally generalizes to functors between these categories.
+
+
 %%% Local Variables: 
 %%% mode: latex
 %%% TeX-master: "iris"

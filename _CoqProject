@@ -50,10 +50,10 @@ algebra/agree.v
 algebra/dec_agree.v
 algebra/excl.v
 algebra/iprod.v
-algebra/functor.v
 algebra/upred.v
 algebra/upred_tactics.v
 algebra/upred_big_op.v
+algebra/frac.v
 program_logic/model.v
 program_logic/adequacy.v
 program_logic/hoare_lifting.v
@@ -74,6 +74,7 @@ program_logic/saved_prop.v
 program_logic/auth.v
 program_logic/sts.v
 program_logic/namespaces.v
+program_logic/tactics.v
 heap_lang/lang.v
 heap_lang/tactics.v
 heap_lang/wp_tactics.v
@@ -81,9 +82,14 @@ heap_lang/lifting.v
 heap_lang/derived.v
 heap_lang/heap.v
 heap_lang/notation.v
+heap_lang/spawn.v
+heap_lang/par.v
 heap_lang/tests.v
 heap_lang/substitution.v
 barrier/barrier.v
+barrier/specification.v
+barrier/protocol.v
+barrier/proof.v
 barrier/client.v
 logrel/stlc.v
 logrel/Vlist.v

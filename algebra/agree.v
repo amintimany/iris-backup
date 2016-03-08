@@ -1,5 +1,5 @@
 From algebra Require Export cmra.
-From algebra Require Import functor upred.
+From algebra Require Import upred.
 Local Hint Extern 10 (_ ≤ _) => omega.
 
 Record agree (A : Type) : Type := Agree {
@@ -15,10 +15,13 @@ Section agree.
 Context {A : cofeT}.
 
 Instance agree_validN : ValidN (agree A) := λ n x,
-  agree_is_valid x n ∧ ∀ n', n' ≤ n → x n' ≡{n'}≡ x n.
+  agree_is_valid x n ∧ ∀ n', n' ≤ n → x n ≡{n'}≡ x n'.
+Instance agree_valid : Valid (agree A) := λ x, ∀ n, ✓{n} x.
+
 Lemma agree_valid_le n n' (x : agree A) :
   agree_is_valid x n → n' ≤ n → agree_is_valid x n'.
 Proof. induction 2; eauto using agree_valid_S. Qed.
+
 Instance agree_equiv : Equiv (agree A) := λ x y,
   (∀ n, agree_is_valid x n ↔ agree_is_valid y n) ∧
   (∀ n, agree_is_valid x n → x n ≡{n}≡ y n).
@@ -26,9 +29,9 @@ Instance agree_dist : Dist (agree A) := λ n x y,
   (∀ n', n' ≤ n → agree_is_valid x n' ↔ agree_is_valid y n') ∧
   (∀ n', n' ≤ n → agree_is_valid x n' → x n' ≡{n'}≡ y n').
 Program Instance agree_compl : Compl (agree A) := λ c,
-  {| agree_car n := c (S n) n; agree_is_valid n := agree_is_valid (c (S n)) n |}.
+  {| agree_car n := c n n; agree_is_valid n := agree_is_valid (c n) n |}.
 Next Obligation.
-  intros c n ?. apply (chain_cauchy c n (S (S n))), agree_valid_S; auto.
+  intros c n ?. apply (chain_cauchy c n (S n)), agree_valid_S; auto.
 Qed.
 Definition agree_cofe_mixin : CofeMixin (agree A).
 Proof.
@@ -50,15 +53,16 @@ Canonical Structure agreeC := CofeT agree_cofe_mixin.
 
 Lemma agree_car_ne n (x y : agree A) : ✓{n} x → x ≡{n}≡ y → x n ≡{n}≡ y n.
 Proof. by intros [??] Hxy; apply Hxy. Qed.
-Lemma agree_cauchy n (x : agree A) i : ✓{n} x → i ≤ n → x i ≡{i}≡ x n.
+Lemma agree_cauchy n (x : agree A) i : ✓{n} x → i ≤ n → x n ≡{i}≡ x i.
 Proof. by intros [? Hx]; apply Hx. Qed.
 
 Program Instance agree_op : Op (agree A) := λ x y,
   {| agree_car := x;
      agree_is_valid n := agree_is_valid x n ∧ agree_is_valid y n ∧ x ≡{n}≡ y |}.
 Next Obligation. naive_solver eauto using agree_valid_S, dist_S. Qed.
-Instance agree_unit : Unit (agree A) := id.
-Instance agree_minus : Minus (agree A) := λ x y, x.
+Instance agree_core : Core (agree A) := id.
+Instance agree_div : Div (agree A) := λ x y, x.
+
 Instance: Comm (≡) (@op (agree A) _).
 Proof. intros x y; split; [naive_solver|by intros n (?&?&Hxy); apply Hxy]. Qed.
 Lemma agree_idemp (x : agree A) : x ⋅ x ≡ x.
@@ -66,8 +70,8 @@ Proof. split; naive_solver. Qed.
 Instance: ∀ n : nat, Proper (dist n ==> impl) (@validN (agree A) _ n).
 Proof.
   intros n x y Hxy [? Hx]; split; [by apply Hxy|intros n' ?].
-  rewrite -(proj2 Hxy n') 1?(Hx n'); eauto using agree_valid_le.
-  by apply dist_le with n; try apply Hxy.
+  rewrite -(proj2 Hxy n') -1?(Hx n'); eauto using agree_valid_le.
+  symmetry. by apply dist_le with n; try apply Hxy.
 Qed.
 Instance: ∀ x : agree A, Proper (dist n ==> dist n) (op x).
 Proof.
@@ -87,21 +91,11 @@ Proof.
     repeat match goal with H : agree_is_valid _ _ |- _ => clear H end;
     by cofe_subst; rewrite !agree_idemp.
 Qed.
-Lemma agree_includedN n (x y : agree A) : x ≼{n} y ↔ y ≡{n}≡ x ⋅ y.
+
+Lemma agree_included (x y : agree A) : x ≼ y ↔ y ≡ x ⋅ y.
 Proof.
   split; [|by intros ?; exists y].
   by intros [z Hz]; rewrite Hz assoc agree_idemp.
-Qed.
-Definition agree_cmra_mixin : CMRAMixin (agree A).
-Proof.
-  split; try (apply _ || done).
-  - by intros n x1 x2 Hx y1 y2 Hy.
-  - intros n x [? Hx]; split; [by apply agree_valid_S|intros n' ?].
-    rewrite (Hx n'); last auto.
-    symmetry; apply dist_le with n; try apply Hx; auto.
-  - intros x; apply agree_idemp.
-  - by intros n x y [(?&?&?) ?].
-  - by intros n x y; rewrite agree_includedN.
 Qed.
 Lemma agree_op_inv n (x1 x2 : agree A) : ✓{n} (x1 ⋅ x2) → x1 ≡{n}≡ x2.
 Proof. intros Hxy; apply Hxy. Qed.
@@ -110,14 +104,22 @@ Proof.
   move=> Hval [z Hy]; move: Hval; rewrite Hy.
   by move=> /agree_op_inv->; rewrite agree_idemp.
 Qed.
-Definition agree_cmra_extend_mixin : CMRAExtendMixin (agree A).
+
+Definition agree_cmra_mixin : CMRAMixin (agree A).
 Proof.
-  intros n x y1 y2 Hval Hx; exists (x,x); simpl; split.
-  - by rewrite agree_idemp.
-  - by move: Hval; rewrite Hx; move=> /agree_op_inv->; rewrite agree_idemp.
+  split; try (apply _ || done).
+  - by intros n x1 x2 Hx y1 y2 Hy.
+  - intros n x [? Hx]; split; [by apply agree_valid_S|intros n' ?].
+    rewrite -(Hx n'); last auto.
+    symmetry; apply dist_le with n; try apply Hx; auto.
+  - intros x; apply agree_idemp.
+  - by intros n x y [(?&?&?) ?].
+  - by intros x y; rewrite agree_included.
+  - intros n x y1 y2 Hval Hx; exists (x,x); simpl; split.
+    + by rewrite agree_idemp.
+    + by move: Hval; rewrite Hx; move=> /agree_op_inv->; rewrite agree_idemp.
 Qed.
-Canonical Structure agreeRA : cmraT :=
-  CMRAT agree_cofe_mixin agree_cmra_mixin agree_cmra_extend_mixin.
+Canonical Structure agreeR : cmraT := CMRAT agree_cofe_mixin agree_cmra_mixin.
 
 Program Definition to_agree (x : A) : agree A :=
   {| agree_car n := x; agree_is_valid n := True |}.
@@ -132,13 +134,15 @@ Proof. intros [??]; split; naive_solver eauto using agree_valid_le. Qed.
 
 (** Internalized properties *)
 Lemma agree_equivI {M} a b : (to_agree a ≡ to_agree b)%I ≡ (a ≡ b : uPred M)%I.
-Proof. do 2 split. by intros [? Hv]; apply (Hv n). apply: to_agree_ne. Qed.
+Proof.
+  uPred.unseal. do 2 split. by intros [? Hv]; apply (Hv n). apply: to_agree_ne.
+Qed.
 Lemma agree_validI {M} x y : ✓ (x ⋅ y) ⊑ (x ≡ y : uPred M).
-Proof. split=> r n _ ?; by apply: agree_op_inv. Qed.
+Proof. uPred.unseal; split=> r n _ ?; by apply: agree_op_inv. Qed.
 End agree.
 
 Arguments agreeC : clear implicits.
-Arguments agreeRA : clear implicits.
+Arguments agreeR : clear implicits.
 
 Program Definition agree_map {A B} (f : A → B) (x : agree A) : agree B :=
   {| agree_car n := f (x n); agree_is_valid := agree_is_valid x |}.
@@ -151,20 +155,20 @@ Proof. done. Qed.
 
 Section agree_map.
   Context {A B : cofeT} (f : A → B) `{Hf: ∀ n, Proper (dist n ==> dist n) f}.
-  Global Instance agree_map_ne n : Proper (dist n ==> dist n) (agree_map f).
+  Instance agree_map_ne n : Proper (dist n ==> dist n) (agree_map f).
   Proof. by intros x1 x2 Hx; split; simpl; intros; [apply Hx|apply Hf, Hx]. Qed.
-  Global Instance agree_map_proper :
-    Proper ((≡) ==> (≡)) (agree_map f) := ne_proper _.
+  Instance agree_map_proper : Proper ((≡) ==> (≡)) (agree_map f) := ne_proper _.
   Lemma agree_map_ext (g : A → B) x :
     (∀ x, f x ≡ g x) → agree_map f x ≡ agree_map g x.
   Proof. by intros Hfg; split; simpl; intros; rewrite ?Hfg. Qed.
   Global Instance agree_map_monotone : CMRAMonotone (agree_map f).
   Proof.
-    split; [|by intros n x [? Hx]; split; simpl; [|by intros n' ?; rewrite Hx]].
-    intros n x y; rewrite !agree_includedN; intros Hy; rewrite Hy.
-    split; last done; split; simpl; last tauto.
-    by intros (?&?&Hxy); repeat split; intros;
-       try apply Hxy; try apply Hf; eauto using @agree_valid_le.
+    split; first apply _.
+    - by intros n x [? Hx]; split; simpl; [|by intros n' ?; rewrite Hx].
+    - intros x y; rewrite !agree_included=> ->.
+      split; last done; split; simpl; last tauto.
+      by intros (?&?&Hxy); repeat split; intros;
+        try apply Hxy; try apply Hf; eauto using @agree_valid_le.
   Qed.
 End agree_map.
 
@@ -176,6 +180,25 @@ Proof.
   by apply dist_le with n; try apply Hfg.
 Qed.
 
-Program Definition agreeF : iFunctor :=
-  {| ifunctor_car := agreeRA; ifunctor_map := @agreeC_map |}.
-Solve Obligations with done.
+Program Definition agreeRF (F : cFunctor) : rFunctor := {|
+  rFunctor_car A B := agreeR (cFunctor_car F A B);
+  rFunctor_map A1 A2 B1 B2 fg := agreeC_map (cFunctor_map F fg)
+|}.
+Next Obligation.
+  intros ? A1 A2 B1 B2 n ???; simpl. by apply agreeC_map_ne, cFunctor_ne.
+Qed.
+Next Obligation.
+  intros F A B x; simpl. rewrite -{2}(agree_map_id x).
+  apply agree_map_ext=>y. by rewrite cFunctor_id.
+Qed.
+Next Obligation.
+  intros F A1 A2 A3 B1 B2 B3 f g f' g' x; simpl. rewrite -agree_map_compose.
+  apply agree_map_ext=>y; apply cFunctor_compose.
+Qed.
+
+Instance agreeRF_contractive F :
+  cFunctorContractive F → rFunctorContractive (agreeRF F).
+Proof.
+  intros ? A1 A2 B1 B2 n ???; simpl.
+  by apply agreeC_map_ne, cFunctor_contractive.
+Qed.

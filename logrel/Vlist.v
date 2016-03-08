@@ -269,10 +269,10 @@ Section Vlist_cofe.
       unfold compl, cofe_Vlist_compl.
       apply Vlist_map_Forall2.
       induction l.
-      destruct (c (S n)) as [[] Hv]; [|inversion Hv]; cbn; auto.
+      destruct (c n) as [[] Hv]; [|inversion Hv]; cbn; auto.
       specialize (IHl (Vlist_chain_tail c)).
       unfold Vlist_chain_tail in IHl; cbn in *.
-      destruct (c (S n)) as [[|c' l'] Hv] eqn:Heq; [inversion Hv|]; cbn in *.
+      destruct (c n) as [[|c' l'] Hv] eqn:Heq; [inversion Hv|]; cbn in *.
       constructor; auto.
       change (c') with (Vlist_head ((c' :: l') ↾ Hv)).
       rewrite -Heq.

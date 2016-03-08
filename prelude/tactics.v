@@ -4,7 +4,7 @@
 the development. *)
 From Coq Require Import Omega.
 From Coq Require Export Psatz.
-From prelude Require Export base.
+From prelude Require Export decidable.
 
 Lemma f_equal_dep {A B} (f g : ∀ x : A, B x) x : f = g → f x = g x.
 Proof. intros ->; reflexivity. Qed.
@@ -34,6 +34,13 @@ is rather efficient when having big hint databases, or expensive [Hint Extern]
 declarations as the ones above. *)
 Tactic Notation "intuition" := intuition auto.
 
+(* [done] can get slow as it calls "trivial". [fast_done] can solve way less
+   goals, but it will also always finish quickly. *)
+Ltac fast_done :=
+  solve [ reflexivity | eassumption | symmetry; eassumption ].
+Tactic Notation "fast_by" tactic(tac) :=
+  tac; fast_done.
+
 (** A slightly modified version of Ssreflect's finishing tactic [done]. It
 also performs [reflexivity] and uses symmetry of negated equalities. Compared
 to Ssreflect's [done], it does not compute the goal's [hnf] so as to avoid
@@ -42,10 +49,9 @@ Coq's [easy] tactic as it does not perform [inversion]. *)
 Ltac done :=
   trivial; intros; solve
   [ repeat first
-    [ solve [trivial]
+    [ fast_done
+    | solve [trivial]
     | solve [symmetry; trivial]
-    | eassumption
-    | reflexivity
     | discriminate
     | contradiction
     | solve [apply not_symmetry; trivial]
@@ -69,9 +75,22 @@ Tactic Notation "etrans" := etransitivity.
 
 Note that [split_and] differs from [split] by only splitting conjunctions. The
 [split] tactic splits any inductive with one constructor. *)
-Tactic Notation "split_and" := match goal with |- _ ∧ _ => split end.
+Tactic Notation "split_and" :=
+  match goal with
+  | |- _ ∧ _ => split
+  | |- Is_true (_ && _) => apply andb_True; split
+  end.
 Tactic Notation "split_and" "?" := repeat split_and.
 Tactic Notation "split_and" "!" := hnf; split_and; split_and?.
+
+Tactic Notation "destruct_and" "?" :=
+  repeat match goal with
+  | H : False |- _ => destruct H
+  | H : _ ∧ _ |- _ => destruct H
+  | H : Is_true (bool_decide _) |- _ => apply (bool_decide_unpack _) in H
+  | H : Is_true (_ && _) |- _ => apply andb_True in H; destruct H
+  end.
+Tactic Notation "destruct_and" "!" := progress (destruct_and?).
 
 (** The tactic [case_match] destructs an arbitrary match in the conclusion or
 assumptions, and generates a corresponding equality. This tactic is best used
@@ -188,21 +207,24 @@ Tactic Notation "simplify_eq" := repeat
   | H : ?x = _ |- _ => subst x
   | H : _ = ?x |- _ => subst x
   | H : _ = _ |- _ => discriminate H
+  | H : _ ≡ _ |- _ => apply leibniz_equiv in H
   | H : ?f _ = ?f _ |- _ => apply (inj f) in H
   | H : ?f _ _ = ?f _ _ |- _ => apply (inj2 f) in H; destruct H
     (* before [injection] to circumvent bug #2939 in some situations *)
-  | H : ?f _ = ?f _ |- _ => injection H as H
+  | H : ?f _ = ?f _ |- _ => progress injection H as H
     (* first hyp will be named [H], subsequent hyps will be given fresh names *)
-  | H : ?f _ _ = ?f _ _ |- _ => injection H as H
-  | H : ?f _ _ _ = ?f _ _ _ |- _ => injection H as H
-  | H : ?f _ _ _ _ = ?f _ _ _ _ |- _ => injection H as H
-  | H : ?f _ _ _ _ _ = ?f _ _ _ _ _ |- _ => injection H as H
-  | H : ?f _ _ _ _ _ _ = ?f _ _ _ _ _ _ |- _ => injection H as H
+  | H : ?f _ _ = ?f _ _ |- _ => progress injection H as H
+  | H : ?f _ _ _ = ?f _ _ _ |- _ => progress injection H as H
+  | H : ?f _ _ _ _ = ?f _ _ _ _ |- _ => progress injection H as H
+  | H : ?f _ _ _ _ _ = ?f _ _ _ _ _ |- _ => progress injection H as H
+  | H : ?f _ _ _ _ _ _ = ?f _ _ _ _ _ _ |- _ => progress injection H as H
   | H : ?x = ?x |- _ => clear H
     (* unclear how to generalize the below *)
   | H1 : ?o = Some ?x, H2 : ?o = Some ?y |- _ =>
     assert (y = x) by congruence; clear H2
   | H1 : ?o = Some ?x, H2 : ?o = None |- _ => congruence
+  | H : @existT ?A _ _ _ = existT _ _ |- _ =>
+     apply (Eqdep_dec.inj_pair2_eq_dec _ (decide_rel (@eq A))) in H
   end.
 Tactic Notation "simplify_eq" "/=" :=
   repeat (progress csimpl in * || simplify_eq).
@@ -226,6 +248,84 @@ Ltac setoid_subst :=
   | _ => progress simplify_eq/=
   | H : @equiv ?A ?e ?x _ |- _ => setoid_subst_aux (@equiv A e) x
   | H : @equiv ?A ?e _ ?x |- _ => symmetry in H; setoid_subst_aux (@equiv A e) x
+  end.
+
+(** f_equiv works on goals of the form "f _ = f _", for any relation and any
+    number of arguments. It looks for an appropriate "Proper" instance, and
+    applies it. *)
+Ltac f_equiv :=
+  match goal with
+  | _ => reflexivity
+  (* We support matches on both sides, *if* they concern the same
+     variable.
+     TODO: We should support different variables, provided that we can
+     derive contradictions for the off-diagonal cases. *)
+  | |- ?R (match ?x with _ => _ end) (match ?x with _ => _ end) =>
+    destruct x
+  (* First assume that the arguments need the same relation as the result *)
+  | |- ?R (?f ?x) (?f _) =>
+    apply (_ : Proper (R ==> R) f)
+  | |- ?R (?f ?x ?y) (?f _ _) =>
+    apply (_ : Proper (R ==> R ==> R) f)
+  (* Next, try to infer the relation. Unfortunately, there is an instance
+     of Proper for (eq ==> _), which will always be matched. *)
+  (* TODO: Can we exclude that instance? *)
+  (* TODO: If some of the arguments are the same, we could also
+     query for "pointwise_relation"'s. But that leads to a combinatorial
+     explosion about which arguments are and which are not the same. *)
+  | |- ?R (?f ?x) (?f _) =>
+    apply (_ : Proper (_ ==> R) f)
+  | |- ?R (?f ?x ?y) (?f _ _) =>
+    apply (_ : Proper (_ ==> _ ==> R) f)
+   (* In case the function symbol differs, but the arguments are the same,
+      maybe we have a pointwise_relation in our context. *)
+  | H : pointwise_relation _ ?R ?f ?g |- ?R (?f ?x) (?g ?x) =>
+     apply H
+  end.
+
+(** auto_proper solves goals of the form "f _ = f _", for any relation and any
+    number of arguments, by repeatedly apply f_equiv and handling trivial cases.
+    If it cannot solve an equality, it will leave that to the user. *)
+Ltac auto_proper :=
+  (* Deal with "pointwise_relation" *)
+  repeat lazymatch goal with
+  | |- pointwise_relation _ _ _ _ => intros ?
+  end;
+  (* Normalize away equalities. *)
+  simplify_eq;
+  (* repeatedly apply congruence lemmas and use the equalities in the hypotheses. *)
+  try (f_equiv; fast_done || auto_proper).
+
+(** solve_proper solves goals of the form "Proper (R1 ==> R2)", for any
+    number of relations. All the actual work is done by f_equiv;
+    solve_proper just introduces the assumptions and unfolds the first
+    head symbol. *)
+Ltac solve_proper :=
+  (* Introduce everything *)
+  intros;
+  repeat lazymatch goal with
+  | |- Proper _ _ => intros ???
+  | |- (_ ==> _)%signature _ _ => intros ???
+  end;
+  (* Unfold the head symbol, which is the one we are proving a new property about *)
+  lazymatch goal with
+  | |- ?R (?f _ _ _ _ _ _ _ _) (?f _ _ _ _ _ _ _ _) => unfold f
+  | |- ?R (?f _ _ _ _ _ _ _) (?f _ _ _ _ _ _ _) => unfold f
+  | |- ?R (?f _ _ _ _ _ _) (?f _ _ _ _ _ _) => unfold f
+  | |- ?R (?f _ _ _ _ _) (?f _ _ _ _ _) => unfold f
+  | |- ?R (?f _ _ _ _) (?f _ _ _ _) => unfold f
+  | |- ?R (?f _ _ _) (?f _ _ _) => unfold f
+  | |- ?R (?f _ _) (?f _ _) => unfold f
+  | |- ?R (?f _) (?f _) => unfold f
+  end;
+  solve [ auto_proper ].
+
+(** The tactic [intros_revert tac] introduces all foralls/arrows, performs tac,
+and then reverts them. *)
+Ltac intros_revert tac :=
+  lazymatch goal with
+  | |- ∀ _, _ => let H := fresh in intro H; intros_revert tac; revert H
+  | |- _ => tac
   end.
 
 (** Given a tactic [tac2] generating a list of terms, [iter tac1 tac2]
@@ -303,7 +403,9 @@ Tactic Notation "feed" "destruct" constr(H) "as" simple_intropattern(IP) :=
 It will search for the first subterm of the goal matching [pat], and then call [tac]
 with that subterm. *)
 Ltac find_pat pat tac :=
-  match goal with |- context [?x] => unify pat x; tac x || fail 2
+  match goal with |- context [?x] =>
+                  unify pat x with typeclass_instances;
+                  tryif tac x then idtac else fail 2
 end.
 
 (** Coq's [firstorder] tactic fails or loops on rather small goals already. In 
@@ -349,6 +451,8 @@ Tactic Notation "naive_solver" tactic(tac) :=
   | H : _ ∧ _ |- _ => destruct H
   | H : ∃ _, _  |- _ => destruct H
   | H : ?P → ?Q, H2 : ?P |- _ => specialize (H H2)
+  | H : Is_true (bool_decide _) |- _ => apply (bool_decide_unpack _) in H
+  | H : Is_true (_ && _) |- _ => apply andb_True in H; destruct H
   (**i simplify and solve equalities *)
   | |- _ => progress simplify_eq/=
   (**i solve the goal *)
@@ -360,6 +464,8 @@ Tactic Notation "naive_solver" tactic(tac) :=
     | reflexivity ]
   (**i operations that generate more subgoals *)
   | |- _ ∧ _ => split
+  | |- Is_true (bool_decide _) => apply (bool_decide_pack _)
+  | |- Is_true (_ && _) => apply andb_True; split
   | H : _ ∨ _ |- _ => destruct H
   (**i solve the goal using the user supplied tactic *)
   | |- _ => solve [tac]

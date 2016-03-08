@@ -30,7 +30,7 @@ Qed.
 
 Global Instance vs_ne E1 E2 n :
   Proper (dist n ==> dist n ==> dist n) (@vs Λ Σ E1 E2).
-Proof. by intros P P' HP Q Q' HQ; rewrite /vs HP HQ. Qed.
+Proof. solve_proper. Qed.
 
 Global Instance vs_proper E1 E2 : Proper ((≡) ==> (≡) ==> (≡)) (@vs Λ Σ E1 E2).
 Proof. apply ne_proper_2, _. Qed.
@@ -41,7 +41,7 @@ Proof. by intros HP HQ; rewrite /vs -HP HQ. Qed.
 
 Global Instance vs_mono' E1 E2 :
   Proper (flip (⊑) ==> (⊑) ==> (⊑)) (@vs Λ Σ E1 E2).
-Proof. by intros until 2; apply vs_mono. Qed.
+Proof. solve_proper. Qed.
 
 Lemma vs_false_elim E1 E2 P : False ={E1,E2}=> P.
 Proof. apply vs_alt, False_elim. Qed.
@@ -114,10 +114,11 @@ Lemma vs_own_updateP E γ a φ :
   a ~~>: φ → own γ a ={E}=> ∃ a', ■ φ a' ∧ own γ a'.
 Proof. by intros; apply vs_alt, own_updateP. Qed.
 
-Lemma vs_own_updateP_empty `{Empty A, !CMRAIdentity A} E γ φ :
-  ∅ ~~>: φ → True ={E}=> ∃ a', ■ φ a' ∧ own γ a'.
-Proof. by intros; eapply vs_alt, own_updateP_empty. Qed.
-
 Lemma vs_update E γ a a' : a ~~> a' → own γ a ={E}=> own γ a'.
 Proof. by intros; apply vs_alt, own_update. Qed.
+
+Lemma vs_own_empty `{Empty A, !CMRAUnit A} E γ :
+  True ={E}=> own γ ∅.
+Proof. by intros; eapply vs_alt, own_empty. Qed.
+
 End vs_ghost.

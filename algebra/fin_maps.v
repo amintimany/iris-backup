@@ -1,6 +1,6 @@
 From algebra Require Export cmra option.
 From prelude Require Export gmap.
-From algebra Require Import functor upred.
+From algebra Require Import upred.
 
 Section cofe.
 Context `{Countable K} {A : cofeT}.
@@ -12,7 +12,7 @@ Program Definition map_chain (c : chain (gmap K A))
   (k : K) : chain (option A) := {| chain_car n := c n !! k |}.
 Next Obligation. by intros c k n i ?; apply (chain_cauchy c). Qed.
 Instance map_compl : Compl (gmap K A) := λ c,
-  map_imap (λ i _, compl (map_chain c i)) (c 1).
+  map_imap (λ i _, compl (map_chain c i)) (c 0).
 Definition map_cofe_mixin : CofeMixin (gmap K A).
 Proof.
   split.
@@ -25,11 +25,12 @@ Proof.
     + by intros m1 m2 m3 ?? k; trans (m2 !! k).
   - by intros n m1 m2 ? k; apply dist_S.
   - intros n c k; rewrite /compl /map_compl lookup_imap.
-    feed inversion (λ H, chain_cauchy c 0 (S n) H k); simpl; auto with lia.
+    feed inversion (λ H, chain_cauchy c 0 n H k); simpl; auto with lia.
     by rewrite conv_compl /=; apply reflexive_eq.
 Qed.
 Canonical Structure mapC : cofeT := CofeT map_cofe_mixin.
-
+Global Instance map_discrete : Discrete A → Discrete mapC.
+Proof. intros ? m m' ? i. by apply (timeless _). Qed.
 (* why doesn't this go automatic? *)
 Global Instance mapC_leibniz: LeibnizEquiv A → LeibnizEquiv mapC.
 Proof. intros; change (LeibnizEquiv (gmap K A)); apply _. Qed.
@@ -60,9 +61,6 @@ Proof.
   intros m m' ? j; destruct (decide (i = j)); simplify_map_eq;
     [by constructor|by apply lookup_ne].
 Qed.
-
-Global Instance map_timeless `{∀ a : A, Timeless a} m : Timeless m.
-Proof. by intros m' ? i; apply: timeless. Qed.
 
 Instance map_empty_timeless : Timeless (∅ : gmap K A).
 Proof.
@@ -95,92 +93,90 @@ Context `{Countable K} {A : cmraT}.
 Implicit Types m : gmap K A.
 
 Instance map_op : Op (gmap K A) := merge op.
-Instance map_unit : Unit (gmap K A) := fmap unit.
+Instance map_core : Core (gmap K A) := fmap core.
+Instance map_valid : Valid (gmap K A) := λ m, ∀ i, ✓ (m !! i).
 Instance map_validN : ValidN (gmap K A) := λ n m, ∀ i, ✓{n} (m !! i).
-Instance map_minus : Minus (gmap K A) := merge minus.
+Instance map_div : Div (gmap K A) := merge div.
 
 Lemma lookup_op m1 m2 i : (m1 ⋅ m2) !! i = m1 !! i ⋅ m2 !! i.
 Proof. by apply lookup_merge. Qed.
-Lemma lookup_minus m1 m2 i : (m1 ⩪ m2) !! i = m1 !! i ⩪ m2 !! i.
+Lemma lookup_div m1 m2 i : (m1 ÷ m2) !! i = m1 !! i ÷ m2 !! i.
 Proof. by apply lookup_merge. Qed.
-Lemma lookup_unit m i : unit m !! i = unit (m !! i).
+Lemma lookup_core m i : core m !! i = core (m !! i).
 Proof. by apply lookup_fmap. Qed.
 
-Lemma map_valid_spec m : ✓ m ↔ ∀ i, ✓ (m !! i).
-Proof. split; intros Hm ??; apply Hm. Qed.
 Lemma map_included_spec (m1 m2 : gmap K A) : m1 ≼ m2 ↔ ∀ i, m1 !! i ≼ m2 !! i.
 Proof.
   split.
   - by intros [m Hm]; intros i; exists (m !! i); rewrite -lookup_op Hm.
-  - intros Hm; exists (m2 ⩪ m1); intros i.
-    by rewrite lookup_op lookup_minus cmra_op_minus'.
+  - intros Hm; exists (m2 ÷ m1); intros i.
+    by rewrite lookup_op lookup_div cmra_op_div.
 Qed.
 Lemma map_includedN_spec (m1 m2 : gmap K A) n :
   m1 ≼{n} m2 ↔ ∀ i, m1 !! i ≼{n} m2 !! i.
 Proof.
   split.
   - by intros [m Hm]; intros i; exists (m !! i); rewrite -lookup_op Hm.
-  - intros Hm; exists (m2 ⩪ m1); intros i.
-    by rewrite lookup_op lookup_minus cmra_op_minus.
+  - intros Hm; exists (m2 ÷ m1); intros i.
+    by rewrite lookup_op lookup_div cmra_op_div'.
 Qed.
 
 Definition map_cmra_mixin : CMRAMixin (gmap K A).
 Proof.
   split.
   - by intros n m1 m2 m3 Hm i; rewrite !lookup_op (Hm i).
-  - by intros n m1 m2 Hm i; rewrite !lookup_unit (Hm i).
+  - by intros n m1 m2 Hm i; rewrite !lookup_core (Hm i).
   - by intros n m1 m2 Hm ? i; rewrite -(Hm i).
-  - by intros n m1 m1' Hm1 m2 m2' Hm2 i; rewrite !lookup_minus (Hm1 i) (Hm2 i).
+  - by intros n m1 m1' Hm1 m2 m2' Hm2 i; rewrite !lookup_div (Hm1 i) (Hm2 i).
+  - intros m; split.
+    + by intros ? n i; apply cmra_valid_validN.
+    + intros Hm i; apply cmra_valid_validN=> n; apply Hm.
   - intros n m Hm i; apply cmra_validN_S, Hm.
   - by intros m1 m2 m3 i; rewrite !lookup_op assoc.
   - by intros m1 m2 i; rewrite !lookup_op comm.
-  - by intros m i; rewrite lookup_op !lookup_unit cmra_unit_l.
-  - by intros m i; rewrite !lookup_unit cmra_unit_idemp.
-  - intros n x y; rewrite !map_includedN_spec; intros Hm i.
-    by rewrite !lookup_unit; apply cmra_unit_preservingN.
+  - by intros m i; rewrite lookup_op !lookup_core cmra_core_l.
+  - by intros m i; rewrite !lookup_core cmra_core_idemp.
+  - intros x y; rewrite !map_included_spec; intros Hm i.
+    by rewrite !lookup_core; apply cmra_core_preserving.
   - intros n m1 m2 Hm i; apply cmra_validN_op_l with (m2 !! i).
     by rewrite -lookup_op.
-  - intros n x y; rewrite map_includedN_spec=> ? i.
-    by rewrite lookup_op lookup_minus cmra_op_minus.
+  - intros x y; rewrite map_included_spec=> ? i.
+    by rewrite lookup_op lookup_div cmra_op_div.
+  - intros n m m1 m2 Hm Hm12.
+    assert (∀ i, m !! i ≡{n}≡ m1 !! i ⋅ m2 !! i) as Hm12'
+      by (by intros i; rewrite -lookup_op).
+    set (f i := cmra_extend n (m !! i) (m1 !! i) (m2 !! i) (Hm i) (Hm12' i)).
+    set (f_proj i := proj1_sig (f i)).
+    exists (map_imap (λ i _, (f_proj i).1) m, map_imap (λ i _, (f_proj i).2) m);
+      repeat split; intros i; rewrite /= ?lookup_op !lookup_imap.
+    + destruct (m !! i) as [x|] eqn:Hx; rewrite !Hx /=; [|constructor].
+      rewrite -Hx; apply (proj2_sig (f i)).
+    + destruct (m !! i) as [x|] eqn:Hx; rewrite /=; [apply (proj2_sig (f i))|].
+      pose proof (Hm12' i) as Hm12''; rewrite Hx in Hm12''.
+      by symmetry; apply option_op_positive_dist_l with (m2 !! i).
+    + destruct (m !! i) as [x|] eqn:Hx; simpl; [apply (proj2_sig (f i))|].
+      pose proof (Hm12' i) as Hm12''; rewrite Hx in Hm12''.
+      by symmetry; apply option_op_positive_dist_r with (m1 !! i).
 Qed.
-Definition map_cmra_extend_mixin : CMRAExtendMixin (gmap K A).
-Proof.
-  intros n m m1 m2 Hm Hm12.
-  assert (∀ i, m !! i ≡{n}≡ m1 !! i ⋅ m2 !! i) as Hm12'
-    by (by intros i; rewrite -lookup_op).
-  set (f i := cmra_extend_op n (m !! i) (m1 !! i) (m2 !! i) (Hm i) (Hm12' i)).
-  set (f_proj i := proj1_sig (f i)).
-  exists (map_imap (λ i _, (f_proj i).1) m, map_imap (λ i _, (f_proj i).2) m);
-    repeat split; intros i; rewrite /= ?lookup_op !lookup_imap.
-  - destruct (m !! i) as [x|] eqn:Hx; rewrite !Hx /=; [|constructor].
-    rewrite -Hx; apply (proj2_sig (f i)).
-  - destruct (m !! i) as [x|] eqn:Hx; rewrite /=; [apply (proj2_sig (f i))|].
-    pose proof (Hm12' i) as Hm12''; rewrite Hx in Hm12''.
-    by symmetry; apply option_op_positive_dist_l with (m2 !! i).
-  - destruct (m !! i) as [x|] eqn:Hx; simpl; [apply (proj2_sig (f i))|].
-    pose proof (Hm12' i) as Hm12''; rewrite Hx in Hm12''.
-    by symmetry; apply option_op_positive_dist_r with (m1 !! i).
-Qed.
-Canonical Structure mapRA : cmraT :=
-  CMRAT map_cofe_mixin map_cmra_mixin map_cmra_extend_mixin.
-Global Instance map_cmra_identity : CMRAIdentity mapRA.
+Canonical Structure mapR : cmraT := CMRAT map_cofe_mixin map_cmra_mixin.
+Global Instance map_cmra_unit : CMRAUnit mapR.
 Proof.
   split.
-  - by intros ? n; rewrite lookup_empty.
+  - by intros i; rewrite lookup_empty.
   - by intros m i; rewrite /= lookup_op lookup_empty (left_id_L None _).
   - apply map_empty_timeless.
 Qed.
-Global Instance mapRA_leibniz : LeibnizEquiv A → LeibnizEquiv mapRA.
-Proof. intros; change (LeibnizEquiv (gmap K A)); apply _. Qed.
+Global Instance map_cmra_discrete : CMRADiscrete A → CMRADiscrete mapR.
+Proof. split; [apply _|]. intros m ? i. by apply: cmra_discrete_valid. Qed.
 
 (** Internalized properties *)
 Lemma map_equivI {M} m1 m2 : (m1 ≡ m2)%I ≡ (∀ i, m1 !! i ≡ m2 !! i : uPred M)%I.
-Proof. done. Qed.
+Proof. by uPred.unseal. Qed.
 Lemma map_validI {M} m : (✓ m)%I ≡ (∀ i, ✓ (m !! i) : uPred M)%I.
-Proof. done. Qed.
+Proof. by uPred.unseal. Qed.
 End cmra.
 
-Arguments mapRA _ {_ _} _.
+Arguments mapR _ {_ _} _.
 
 Section properties.
 Context `{Countable K} {A : cmraT}.
@@ -191,35 +187,35 @@ Implicit Types a : A.
 Lemma map_lookup_validN n m i x : ✓{n} m → m !! i ≡{n}≡ Some x → ✓{n} x.
 Proof. by move=> /(_ i) Hm Hi; move:Hm; rewrite Hi. Qed.
 Lemma map_lookup_valid m i x : ✓ m → m !! i ≡ Some x → ✓ x.
-Proof. move=>Hm Hi n. move:(Hm n i). by rewrite Hi. Qed.
+Proof. move=> Hm Hi. move:(Hm i). by rewrite Hi. Qed.
 Lemma map_insert_validN n m i x : ✓{n} x → ✓{n} m → ✓{n} <[i:=x]>m.
 Proof. by intros ?? j; destruct (decide (i = j)); simplify_map_eq. Qed.
 Lemma map_insert_valid m i x : ✓ x → ✓ m → ✓ <[i:=x]>m.
-Proof. intros ?? n j; apply map_insert_validN; auto. Qed.
+Proof. by intros ?? j; destruct (decide (i = j)); simplify_map_eq. Qed.
 Lemma map_singleton_validN n i x : ✓{n} ({[ i := x ]} : gmap K A) ↔ ✓{n} x.
 Proof.
-  split; [|by intros; apply map_insert_validN, cmra_empty_valid].
+  split; [|by intros; apply map_insert_validN, cmra_unit_validN].
   by move=>/(_ i); simplify_map_eq.
 Qed.
 Lemma map_singleton_valid i x : ✓ ({[ i := x ]} : gmap K A) ↔ ✓ x.
-Proof. split; intros ? n; eapply map_singleton_validN; eauto. Qed.
+Proof. rewrite !cmra_valid_validN. by setoid_rewrite map_singleton_validN. Qed.
 
 Lemma map_insert_singleton_opN n m i x :
-  m !! i = None ∨ m !! i ≡{n}≡ Some (unit x) → <[i:=x]> m ≡{n}≡ {[ i := x ]} ⋅ m.
+  m !! i = None ∨ m !! i ≡{n}≡ Some (core x) → <[i:=x]> m ≡{n}≡ {[ i := x ]} ⋅ m.
 Proof.
   intros Hi j; destruct (decide (i = j)) as [->|];
     [|by rewrite lookup_op lookup_insert_ne // lookup_singleton_ne // left_id].
   rewrite lookup_op lookup_insert lookup_singleton.
-  by destruct Hi as [->| ->]; constructor; rewrite ?cmra_unit_r.
+  by destruct Hi as [->| ->]; constructor; rewrite ?cmra_core_r.
 Qed.
 Lemma map_insert_singleton_op m i x :
-  m !! i = None ∨ m !! i ≡ Some (unit x) → <[i:=x]> m ≡ {[ i := x ]} ⋅ m.
+  m !! i = None ∨ m !! i ≡ Some (core x) → <[i:=x]> m ≡ {[ i := x ]} ⋅ m.
 Proof.
   rewrite !equiv_dist; naive_solver eauto using map_insert_singleton_opN.
 Qed.
 
-Lemma map_unit_singleton (i : K) (x : A) :
-  unit ({[ i := x ]} : gmap K A) = {[ i := unit x ]}.
+Lemma map_core_singleton (i : K) (x : A) :
+  core ({[ i := x ]} : gmap K A) = {[ i := core x ]}.
 Proof. apply map_fmap_singleton. Qed.
 Lemma map_op_singleton (i : K) (x y : A) :
   {[ i := x ]} ⋅ {[ i := y ]} = ({[ i := x ⋅ y ]} : gmap K A).
@@ -235,8 +231,8 @@ Proof.
       [exists (x ⋅ y)|exists x]; eauto using cmra_included_l.
   - intros (y&Hi&?); rewrite map_includedN_spec=>j.
     destruct (decide (i = j)); simplify_map_eq.
-    + by rewrite Hi; apply Some_Some_includedN, cmra_included_includedN.
-    + apply None_includedN.
+    + rewrite Hi. by apply (includedN_preserving _), cmra_included_includedN.
+    + apply: cmra_unit_leastN.
 Qed.
 Lemma map_dom_op m1 m2 : dom (gset K) (m1 ⋅ m2) ≡ dom _ m1 ∪ dom _ m2.
 Proof.
@@ -272,14 +268,14 @@ Proof. apply map_insert_updateP'. Qed.
 Lemma map_singleton_update i (x y : A) : x ~~> y → {[ i := x ]} ~~> {[ i := y ]}.
 Proof. apply map_insert_update. Qed.
 
-Lemma map_singleton_updateP_empty `{Empty A, !CMRAIdentity A}
+Lemma map_singleton_updateP_empty `{Empty A, !CMRAUnit A}
     (P : A → Prop) (Q : gmap K A → Prop) i :
   ∅ ~~>: P → (∀ y, P y → Q {[ i := y ]}) → ∅ ~~>: Q.
 Proof.
   intros Hx HQ n gf Hg.
   destruct (Hx n (from_option ∅ (gf !! i))) as (y&?&Hy).
   { move:(Hg i). rewrite !left_id.
-    case _: (gf !! i); simpl; auto using cmra_empty_valid. }
+    case _: (gf !! i); simpl; auto using cmra_unit_validN. }
   exists {[ i := y ]}; split; first by auto.
   intros i'; destruct (decide (i' = i)) as [->|].
   - rewrite lookup_op lookup_singleton.
@@ -287,7 +283,7 @@ Proof.
     by rewrite right_id.
   - move:(Hg i'). by rewrite !lookup_op lookup_singleton_ne // !left_id.
 Qed.
-Lemma map_singleton_updateP_empty' `{Empty A, !CMRAIdentity A} (P: A → Prop) i :
+Lemma map_singleton_updateP_empty' `{Empty A, !CMRAUnit A} (P: A → Prop) i :
   ∅ ~~>: P → ∅ ~~>: λ m, ∃ y, m = {[ i := y ]} ∧ P y.
 Proof. eauto using map_singleton_updateP_empty. Qed.
 
@@ -319,7 +315,7 @@ End freshness.
 
 (* Allocation is a local update: Just use composition with a singleton map. *)
 (* Deallocation is *not* a local update. The trouble is that if we
-   own {[ i ↦ x ]}, then the frame could always own "unit x", and prevent
+   own {[ i ↦ x ]}, then the frame could always own "core x", and prevent
    deallocation. *)
 
 (* Applying a local update at a position we own is a local update. *)
@@ -342,10 +338,10 @@ Proof. by intros ? m m' Hm k; rewrite !lookup_fmap; apply option_fmap_ne. Qed.
 Instance map_fmap_cmra_monotone `{Countable K} {A B : cmraT} (f : A → B)
   `{!CMRAMonotone f} : CMRAMonotone (fmap f : gmap K A → gmap K B).
 Proof.
-  split.
-  - intros m1 m2 n; rewrite !map_includedN_spec; intros Hm i.
-    by rewrite !lookup_fmap; apply: includedN_preserving.
-  - by intros n m ? i; rewrite lookup_fmap; apply validN_preserving.
+  split; try apply _.
+  - by intros n m ? i; rewrite lookup_fmap; apply (validN_preserving _).
+  - intros m1 m2; rewrite !map_included_spec=> Hm i.
+    by rewrite !lookup_fmap; apply: included_preserving.
 Qed.
 Definition mapC_map `{Countable K} {A B} (f: A -n> B) : mapC K A -n> mapC K B :=
   CofeMor (fmap f : mapC K A → mapC K B).
@@ -356,17 +352,44 @@ Proof.
   destruct (_ !! k) eqn:?; simpl; constructor; apply Hf.
 Qed.
 
-Program Definition mapF K `{Countable K} (Σ : iFunctor) : iFunctor := {|
-  ifunctor_car := mapRA K ∘ Σ; ifunctor_map A B := mapC_map ∘ ifunctor_map Σ
+Program Definition mapCF K `{Countable K} (F : cFunctor) : cFunctor := {|
+  cFunctor_car A B := mapC K (cFunctor_car F A B);
+  cFunctor_map A1 A2 B1 B2 fg := mapC_map (cFunctor_map F fg)
 |}.
 Next Obligation.
-  by intros K ?? Σ A B n f g Hfg; apply mapC_map_ne, ifunctor_map_ne.
+  by intros K ?? F A1 A2 B1 B2 n f g Hfg; apply mapC_map_ne, cFunctor_ne.
 Qed.
 Next Obligation.
-  intros K ?? Σ A x. rewrite /= -{2}(map_fmap_id x).
-  apply map_fmap_setoid_ext=> ? y _; apply ifunctor_map_id.
+  intros K ?? F A B x. rewrite /= -{2}(map_fmap_id x).
+  apply map_fmap_setoid_ext=>y ??; apply cFunctor_id.
 Qed.
 Next Obligation.
-  intros K ?? Σ A B C f g x. rewrite /= -map_fmap_compose.
-  apply map_fmap_setoid_ext=> ? y _; apply ifunctor_map_compose.
+  intros K ?? F A1 A2 A3 B1 B2 B3 f g f' g' x. rewrite /= -map_fmap_compose.
+  apply map_fmap_setoid_ext=>y ??; apply cFunctor_compose.
+Qed.
+Instance mapCF_contractive K `{Countable K} F :
+  cFunctorContractive F → cFunctorContractive (mapCF K F).
+Proof.
+  by intros ? A1 A2 B1 B2 n f g Hfg; apply mapC_map_ne, cFunctor_contractive.
+Qed.
+
+Program Definition mapRF K `{Countable K} (F : rFunctor) : rFunctor := {|
+  rFunctor_car A B := mapR K (rFunctor_car F A B);
+  rFunctor_map A1 A2 B1 B2 fg := mapC_map (rFunctor_map F fg)
+|}.
+Next Obligation.
+  by intros K ?? F A1 A2 B1 B2 n f g Hfg; apply mapC_map_ne, rFunctor_ne.
+Qed.
+Next Obligation.
+  intros K ?? F A B x. rewrite /= -{2}(map_fmap_id x).
+  apply map_fmap_setoid_ext=>y ??; apply rFunctor_id.
+Qed.
+Next Obligation.
+  intros K ?? F A1 A2 A3 B1 B2 B3 f g f' g' x. rewrite /= -map_fmap_compose.
+  apply map_fmap_setoid_ext=>y ??; apply rFunctor_compose.
+Qed.
+Instance mapRF_contractive K `{Countable K} F :
+  rFunctorContractive F → rFunctorContractive (mapRF K F).
+Proof.
+  by intros ? A1 A2 B1 B2 n f g Hfg; apply mapC_map_ne, rFunctor_contractive.
 Qed.
