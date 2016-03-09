@@ -14,9 +14,8 @@ Implicit Types e : expr Λ.
 Implicit Types σ : state Λ.
 Implicit Types P Q : iProp Λ Σ.
 Implicit Types Φ : val Λ → iProp Λ Σ.
-Transparent uPred_holds.
 
-Notation wp_fork ef := (default True ef (flip (wp ⊤) (λ _, True)))%I.
+Notation wp_fork ef := (default True ef (flip (wp ⊤) (λ _, ■ True)))%I.
 
 Lemma wp_lift_step E1 E2
     (φ : expr Λ → state Λ → option (expr Λ) → Prop) Φ e1 σ1 :
@@ -24,10 +23,11 @@ Lemma wp_lift_step E1 E2
   reducible e1 σ1 →
   (∀ e2 σ2 ef, prim_step e1 σ1 e2 σ2 ef → φ e2 σ2 ef) →
   (|={E2,E1}=> ▷ ownP σ1 ★ ▷ ∀ e2 σ2 ef,
-    (■ φ e2 σ2 ef ∧ ownP σ2) -★ |={E1,E2}=> || e2 @ E2 {{ Φ }} ★ wp_fork ef)
-  ⊑ || e1 @ E2 {{ Φ }}.
+    (■ φ e2 σ2 ef ∧ ownP σ2) -★ |={E1,E2}=> #> e2 @ E2 {{ Φ }} ★ wp_fork ef)
+  ⊑ #> e1 @ E2 {{ Φ }}.
 Proof.
-  intros ? He Hsafe Hstep; split=> n r ? Hvs; constructor; auto.
+  intros ? He Hsafe Hstep. rewrite pvs_eq wp_eq.
+  uPred.unseal; split=> n r ? Hvs; constructor; auto.
   intros rf k Ef σ1' ???; destruct (Hvs rf (S k) Ef σ1')
     as (r'&(r1&r2&?&?&Hwp)&Hws); auto; clear Hvs; cofe_subst r'.
   destruct (wsat_update_pst k (E1 ∪ Ef) σ1 σ1' r1 (r2 ⋅ rf)) as [-> Hws'].
@@ -38,24 +38,26 @@ Proof.
     as (r'&(r1'&r2'&?&?&?)&?); auto; cofe_subst r'.
   { split. by eapply Hstep. apply ownP_spec; auto. }
   { rewrite (comm _ r2) -assoc; eauto using wsat_le. }
-  by exists r1', r2'; split_and?; [| |by intros ? ->].
+  exists r1', r2'; split_and?; try done. by uPred.unseal; intros ? ->.
 Qed.
 
 Lemma wp_lift_pure_step E (φ : expr Λ → option (expr Λ) → Prop) Φ e1 :
   to_val e1 = None →
   (∀ σ1, reducible e1 σ1) →
   (∀ σ1 e2 σ2 ef, prim_step e1 σ1 e2 σ2 ef → σ1 = σ2 ∧ φ e2 ef) →
-  (▷ ∀ e2 ef, ■ φ e2 ef → || e2 @ E {{ Φ }} ★ wp_fork ef) ⊑ || e1 @ E {{ Φ }}.
+  (▷ ∀ e2 ef, ■ φ e2 ef → #> e2 @ E {{ Φ }} ★ wp_fork ef) ⊑ #> e1 @ E {{ Φ }}.
 Proof.
-  intros He Hsafe Hstep; split=> n r ? Hwp; constructor; auto.
+  intros He Hsafe Hstep; rewrite wp_eq; uPred.unseal.
+  split=> n r ? Hwp; constructor; auto.
   intros rf k Ef σ1 ???; split; [done|]. destruct n as [|n]; first lia.
   intros e2 σ2 ef ?; destruct (Hstep σ1 e2 σ2 ef); auto; subst.
   destruct (Hwp e2 ef k r) as (r1&r2&Hr&?&?); auto.
-  exists r1,r2; split_and?; [rewrite -Hr| |by intros ? ->]; eauto using wsat_le.
+  exists r1,r2; split_and?; try done.
+  - rewrite -Hr; eauto using wsat_le.
+  - uPred.unseal; by intros ? ->.
 Qed.
 
 (** Derived lifting lemmas. *)
-Opaque uPred_holds.
 Import uPred.
 
 Lemma wp_lift_atomic_step {E Φ} e1
@@ -65,7 +67,7 @@ Lemma wp_lift_atomic_step {E Φ} e1
   (∀ e2 σ2 ef,
     prim_step e1 σ1 e2 σ2 ef → ∃ v2, to_val e2 = Some v2 ∧ φ v2 σ2 ef) →
   (▷ ownP σ1 ★ ▷ ∀ v2 σ2 ef, ■ φ v2 σ2 ef ∧ ownP σ2 -★ Φ v2 ★ wp_fork ef)
-  ⊑ || e1 @ E {{ Φ }}.
+  ⊑ #> e1 @ E {{ Φ }}.
 Proof.
   intros. rewrite -(wp_lift_step E E (λ e2 σ2 ef, ∃ v2,
     to_val e2 = Some v2 ∧ φ v2 σ2 ef) _ e1 σ1) //; [].
@@ -84,7 +86,7 @@ Lemma wp_lift_atomic_det_step {E Φ e1} σ1 v2 σ2 ef :
   reducible e1 σ1 →
   (∀ e2' σ2' ef', prim_step e1 σ1 e2' σ2' ef' →
     σ2 = σ2' ∧ to_val e2' = Some v2 ∧ ef = ef') →
-  (▷ ownP σ1 ★ ▷ (ownP σ2 -★ Φ v2 ★ wp_fork ef)) ⊑ || e1 @ E {{ Φ }}.
+  (▷ ownP σ1 ★ ▷ (ownP σ2 -★ Φ v2 ★ wp_fork ef)) ⊑ #> e1 @ E {{ Φ }}.
 Proof.
   intros. rewrite -(wp_lift_atomic_step _ (λ v2' σ2' ef',
     σ2 = σ2' ∧ v2 = v2' ∧ ef = ef') σ1) //; last naive_solver.
@@ -99,7 +101,7 @@ Lemma wp_lift_pure_det_step {E Φ} e1 e2 ef :
   to_val e1 = None →
   (∀ σ1, reducible e1 σ1) →
   (∀ σ1 e2' σ2 ef', prim_step e1 σ1 e2' σ2 ef' → σ1 = σ2 ∧ e2 = e2' ∧ ef = ef')→
-  ▷ (|| e2 @ E {{ Φ }} ★ wp_fork ef) ⊑ || e1 @ E {{ Φ }}.
+  ▷ (#> e2 @ E {{ Φ }} ★ wp_fork ef) ⊑ #> e1 @ E {{ Φ }}.
 Proof.
   intros.
   rewrite -(wp_lift_pure_step E (λ e2' ef', e2 = e2' ∧ ef = ef') _ e1) //=.

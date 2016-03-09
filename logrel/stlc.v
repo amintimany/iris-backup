@@ -434,7 +434,7 @@ Local Hint Extern 1 (_ ⊑ ∃ _, _)%I => rewrite -exist_intro : itauto.
 Local Hint Extern 1 (_ ⊑ (_ ∨ _))%I => rewrite -or_intro_l : itauto.
 Local Hint Extern 1 (_ ⊑ (_ ∨ _))%I => rewrite -or_intro_r : itauto.
 
-Local Ltac value_case := rewrite -wp_value/= ?to_of_val //.
+Local Ltac value_case := rewrite -wp_value/= ?to_of_val //; auto.
 
 
 Lemma typed_interp Γ vs e τ :

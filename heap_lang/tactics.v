@@ -1,4 +1,4 @@
-From heap_lang Require Export lang.
+From heap_lang Require Export substitution.
 From prelude Require Import fin_maps.
 Import heap_lang.
 
@@ -19,7 +19,7 @@ Ltac inv_step :=
      simpl in H; first [subst e|discriminate H|injection H as H]
      (* ensure that we make progress for each subgoal *)
   | H : head_step ?e _ _ _ _, Hv : of_val ?v = fill ?K ?e |- _ =>
-    apply values_head_stuck, (fill_not_val K) in H;
+    apply val_head_stuck, (fill_not_val K) in H;
     by rewrite -Hv to_of_val in H (* maybe use a helper lemma here? *)
   | H : head_step ?e _ _ _ _ |- _ =>
      try (is_var e; fail 1); (* inversion yields many goals if e is a variable
@@ -34,6 +34,7 @@ Ltac reshape_val e tac :=
   let rec go e :=
   match e with
   | of_val ?v => v
+  | of_val' ?v => v
   | Rec ?f ?x ?e => constr:(RecV f x e)
   | Lit ?l => constr:(LitV l)
   | Pair ?e1 ?e2 =>
@@ -65,10 +66,10 @@ Ltac reshape_expr e tac :=
   | Load ?e => go (LoadCtx :: K) e
   | Store ?e1 ?e2 => reshape_val e1 ltac:(fun v1 => go (StoreRCtx v1 :: K) e2)
   | Store ?e1 ?e2 => go (StoreLCtx e2 :: K) e1
-  | Cas ?e0 ?e1 ?e2 => reshape_val e0 ltac:(fun v0 => first
+  | CAS ?e0 ?e1 ?e2 => reshape_val e0 ltac:(fun v0 => first
      [ reshape_val e1 ltac:(fun v1 => go (CasRCtx v0 v1 :: K) e2)
      | go (CasMCtx v0 e2 :: K) e1 ])
-  | Cas ?e0 ?e1 ?e2 => go (CasLCtx e1 e2 :: K) e0
+  | CAS ?e0 ?e1 ?e2 => go (CasLCtx e1 e2 :: K) e0
   end in go (@nil ectx_item) e.
 
 (** The tactic [do_step tac] solves goals of the shape [reducible], [prim_step]
@@ -83,7 +84,7 @@ Ltac do_step tac :=
   | |- prim_step ?e1 ?σ1 ?e2 ?σ2 ?ef =>
      reshape_expr e1 ltac:(fun K e1' =>
        eapply Ectx_step with K e1' _; [reflexivity|reflexivity|];
-       first [apply alloc_fresh|econstructor];
+       first [apply alloc_fresh|econstructor; try reflexivity; simpl_subst];
        rewrite ?to_of_val; tac; fail)
   | |- head_step ?e1 ?σ1 ?e2 ?σ2 ?ef =>
      first [apply alloc_fresh|econstructor];
