@@ -25,6 +25,10 @@ Proof.
   apply uPred.ownM_ne, Res_ne; auto; apply singleton_ne, to_agree_ne.
   by apply Next_contractive=> j ?; rewrite (HPQ j).
 Qed.
+Global Instance ownI_proper i : Proper ((≡) ==> (≡)) (@ownI Λ Σ i).
+Proof.
+  intros x y H. rewrite H; trivial.
+Qed.
 Lemma always_ownI i P : (□ ownI i P)%I ≡ ownI i P.
 Proof.
   apply uPred.always_ownM.
