@@ -186,10 +186,8 @@ Proof.
   induction K as [|Ki K IH]; simpl; intros K' Hfill; auto using prefix_of_nil.
   destruct K' as [|Ki' K']; simplify_eq.
   { exfalso; apply (eq_None_not_Some (to_val (fill K e1)));
-    [apply fill_not_val | eapply head_ctx_step_val; rewrite Hfill];
+    [apply fill_not_val | eapply head_ctx_step_val; erewrite Hfill];
     eauto using fill_not_val, head_ctx_step_val.
-    Unshelve.
-    assumption.
   }
   cut (Ki = Ki'); [naive_solver eauto using prefix_of_cons|].
   eauto using fill_item_no_val_inj, values_head_stuck, fill_not_val.
@@ -473,7 +471,7 @@ Proof.
     rewrite or_elim; [apply impl_elim_l| |];
     rewrite exist_elim; eauto; [intros v1| intros v2];
     apply const_elim_l; intros H; rewrite H;
-    rewrite -impl_intro_r // -later_and later_mono; eauto;
+    rewrite -impl_intro_r //; rewrite -later_and later_mono; eauto;
     [rewrite -wp_case_inl | rewrite -wp_case_inr]; eauto using to_of_val;
     asimpl; [specialize (IHHtyped2 (v1::vs)) | specialize (IHHtyped3 (v2::vs))];
     erewrite <- ?typed_subst_head_simpl in * by (cbn; eauto);
